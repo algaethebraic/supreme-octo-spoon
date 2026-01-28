@@ -69,7 +69,7 @@
             children: new Map()
           };
           root.children.set(linkTitle, node);
-          addChildrenToNode(node, linkTitle, new Set(['Home', linkTitle]));
+          addChildrenToNode(node, linkTitle, new Set(['Home']));
         }
       }
     }
@@ -77,20 +77,67 @@
     return root;
   }
 
-  function addChildrenToNode(node: TreeNode, pageName: string, visited: Set<string>) {
+  function getAllWikiLinks(pageName: string): Set<string> {
+    const allLinks = new Set<string>();
+    
+    // Get source links (explicit [text] links on this page)
     const page = $pages[pageName];
-    if (!page) return;
-
-    const linkRegex = /\[([^\]]+)\]/g;
-    let match;
-
-    while ((match = linkRegex.exec(page.content)) !== null) {
-      const linkTitle = match[1].trim();
+    if (page) {
+      const linkRegex = /\[([^\]]+)\]/g;
+      let match;
+      while ((match = linkRegex.exec(page.content)) !== null) {
+        const trimmedLink = match[1].trim();
+        if (trimmedLink) {
+          allLinks.add(trimmedLink);
+        }
+      }
+    }
+    
+    // Get proxy links - page names mentioned outside of brackets
+    if (page?.content) {
+      // Remove all bracketed content to check for mentions outside brackets
+      const contentWithoutBrackets = page.content.replace(/\[[^\]]*\]/g, '');
       
-      // Avoid circular references
+      Object.keys($pages).forEach((otherPageName) => {
+        if (otherPageName !== pageName) {
+          // Check if page name appears as a whole word (with word boundaries)
+          const escapedName = otherPageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const regex = new RegExp(`\\b${escapedName}\\b`, 'gi');
+          if (regex.test(contentWithoutBrackets)) {
+            allLinks.add(otherPageName);
+          }
+        }
+      });
+    }
+    
+    // Note: We don't include backlinks here - only links FROM this page
+    // (source links and proxy/mentioned links)
+    
+    const sourceLinksFromPage = page ? Array.from(page.content.matchAll(/\[([^\]]+)\]/g)).map(m => m[1].trim()) : [];
+    const contentWithoutBrackets = page?.content.replace(/\[[^\]]*\]/g, '') || '';
+    const mentionedPages = page ? Object.keys($pages).filter(p => {
+      if (p === pageName) return false;
+      const escapedName = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\b${escapedName}\\b`, 'gi');
+      return regex.test(contentWithoutBrackets);
+    }) : [];
+    
+    console.log(`getAllWikiLinks("${pageName}"):`, {
+      sourceLinks: sourceLinksFromPage,
+      mentioned: mentionedPages,
+      combined: Array.from(allLinks)
+    });
+    
+    return allLinks;
+  }
+
+  function addChildrenToNode(node: TreeNode, pageName: string, visited: Set<string>) {
+    const allLinks = getAllWikiLinks(pageName);
+    
+    allLinks.forEach((linkTitle) => {
+      // Prevent infinite loops by checking if this page is already in the current path
+      // But allow the same page to appear in different branches of the tree
       if (!visited.has(linkTitle) && linkTitle !== 'Home') {
-        visited.add(linkTitle);
-        
         if (!node.children.has(linkTitle)) {
           const childNode: TreeNode = {
             name: linkTitle,
@@ -100,11 +147,13 @@
           };
           node.children.set(linkTitle, childNode);
           
-          // Recursively add children
-          addChildrenToNode(childNode, linkTitle, new Set(visited));
+          // Recursively add children - track current path to prevent infinite loops
+          const newVisited = new Set(visited);
+          newVisited.add(pageName);
+          addChildrenToNode(childNode, linkTitle, newVisited);
         }
       }
-    }
+    });
   }
 
   function toggleNode(path: string) {
