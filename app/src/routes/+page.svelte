@@ -14,6 +14,8 @@
   let showBackups = false;
   let importInput: HTMLInputElement;
   let container: HTMLDivElement;
+  let sidebarWidth = 220;
+  let isResizing = false;
   const expandedNodesStore = writable(new Set<string>());
   let pageHistory: string[] = ['Home'];
   let historyIndex: number = 0;
@@ -216,6 +218,36 @@
     });
     
     return result;
+  }
+
+  $: renderedContent = renderContent(content);
+
+  function loadPage(title: string) {
+    const currentPage = $pages[title];
+    if (!currentPage) {
+      // Create new page
+      pages.update((p) => {
+        return {
+          ...p,
+          [title]: {
+            title,
+            content: ''
+          }
+        };
+      });
+      content = '';
+    } else {
+      content = currentPage.content;
+    }
+    
+    currentTitle = title;
+    
+    // Update history
+    if (pageHistory[historyIndex] !== title) {
+      pageHistory = pageHistory.slice(0, historyIndex + 1);
+      pageHistory.push(title);
+      historyIndex = pageHistory.length - 1;
+    }
   }
 
   function handleClick(e: MouseEvent) {
