@@ -34,6 +34,10 @@
   let sanitizeConflicts: Array<{ pageName: string; sources: string[] }> = [];
   let currentConflictIndex = 0;
   let conflictResolutions: Record<string, string> = {};
+  
+  // Delete confirmation variables
+  let showDeleteConfirm = false;
+  let pageToDelete: string | null = null;
 
   type TreeNode = {
     name: string;
@@ -484,6 +488,34 @@
     currentConflictIndex = 0;
     conflictResolutions = {};
   }
+
+  function confirmDelete(pageName: string) {
+    pageToDelete = pageName;
+    showDeleteConfirm = true;
+  }
+
+  function deletePage() {
+    if (!pageToDelete) return;
+    
+    pages.update(p => {
+      const updated = { ...p };
+      delete updated[pageToDelete];
+      return updated;
+    });
+    
+    // If we're viewing the deleted page, go to Home
+    if (currentTitle === pageToDelete) {
+      loadPage('Home');
+    }
+    
+    showDeleteConfirm = false;
+    pageToDelete = null;
+  }
+
+  function cancelDelete() {
+    showDeleteConfirm = false;
+    pageToDelete = null;
+  }
 </script>
 
 <style>
@@ -776,16 +808,49 @@
 
   .orphan-item {
     padding: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 2px;
+    padding-left: 4px;
+  }
+
+  .orphan-item span {
     cursor: pointer;
     color: #666;
     text-decoration: none;
-    border-radius: 2px;
-    padding-left: 4px;
+    flex: 1;
   }
 
   .orphan-item:hover {
     background-color: #f0f0f0;
     color: #333;
+  }
+
+  .orphan-item:hover span {
+    color: #333;
+  }
+
+  .delete-orphan {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    font-size: 20px;
+    padding: 0 4px;
+    line-height: 1;
+    margin-left: 4px;
+    display: none;
+  }
+
+  .orphan-item:hover .delete-orphan {
+    display: inline;
+    color: #d32f2f;
+  }
+
+  .delete-orphan:hover {
+    background-color: #ffebee;
+    border-radius: 2px;
   }
 
 
@@ -804,7 +869,10 @@
         <h4>Orphan Pages</h4>
         <ul class="orphan-list">
           {#each orphans as orphan}
-            <li class="orphan-item" on:click={() => loadPage(orphan)}>{orphan}</li>
+            <li class="orphan-item">
+              <span on:click={() => loadPage(orphan)}>{orphan}</span>
+              <button class="delete-orphan" on:click={() => confirmDelete(orphan)} title="Delete page">×</button>
+            </li>
           {/each}
         </ul>
       {/if}
@@ -925,6 +993,19 @@
             </button>
           </div>
         {/if}
+      </div>
+    </div>
+  {/if}
+
+  {#if showDeleteConfirm && pageToDelete}
+    <div class="modal-overlay" on:click={cancelDelete}>
+      <div class="modal" on:click|stopPropagation>
+        <h3>Delete Page?</h3>
+        <p>Are you sure you want to delete the page "<strong>{pageToDelete}</strong>"? This action cannot be undone.</p>
+        <div class="modal-buttons">
+          <button on:click={cancelDelete}>Cancel</button>
+          <button on:click={deletePage} style="background-color: #d32f2f;">Delete</button>
+        </div>
       </div>
     </div>
   {/if}
