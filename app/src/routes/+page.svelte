@@ -44,37 +44,55 @@
     path: string;
     isPage: boolean;
     children: Map<string, TreeNode>;
+    hasLinks: boolean;
   };
 
   function buildPageTree(): TreeNode {
+    // Add links from Home (both source and proxy links)
+    const allLinksFromHome = getAllWikiLinks('Home');
+    
     const root: TreeNode = {
       name: 'Home',
       path: 'Home',
       isPage: false,
-      children: new Map()
+      children: new Map(),
+      hasLinks: allLinksFromHome.size > 0
     };
-
-    // Add links from Home
-    const homePage = $pages['Home'];
-    if (homePage) {
-      const linkRegex = /\[([^\]]+)\]/g;
-      let match;
-      while ((match = linkRegex.exec(homePage.content)) !== null) {
-        const linkTitle = match[1].trim();
-        if (!root.children.has(linkTitle)) {
-          const node: TreeNode = {
-            name: linkTitle,
-            path: 'Home/' + linkTitle,
-            isPage: !!$pages[linkTitle],
-            children: new Map()
-          };
-          root.children.set(linkTitle, node);
-          addChildrenToNode(node, linkTitle, new Set(['Home']));
-        }
+    
+    allLinksFromHome.forEach((linkTitle) => {
+      if (!root.children.has(linkTitle)) {
+        const node: TreeNode = {
+          name: linkTitle,
+          path: 'Home/' + linkTitle,
+          isPage: !!$pages[linkTitle],
+          children: new Map(),
+          hasLinks: getAllWikiLinks(linkTitle).size > 0
+        };
+        root.children.set(linkTitle, node);
       }
-    }
+    });
 
     return root;
+  }
+
+  function populateNodeChildren(node: TreeNode, pageName: string) {
+    // Lazy-load children when a node is expanded
+    if (node.children.size > 0) return; // Already populated
+    
+    const allLinks = getAllWikiLinks(pageName);
+    
+    allLinks.forEach((linkTitle) => {
+      if (linkTitle !== 'Home' && !node.children.has(linkTitle)) {
+        const childNode: TreeNode = {
+          name: linkTitle,
+          path: node.path + '/' + linkTitle,
+          isPage: !!$pages[linkTitle],
+          children: new Map(),
+          hasLinks: getAllWikiLinks(linkTitle).size > 0
+        };
+        node.children.set(linkTitle, childNode);
+      }
+    });
   }
 
   function getAllWikiLinks(pageName: string): Set<string> {
@@ -129,31 +147,6 @@
     });
     
     return allLinks;
-  }
-
-  function addChildrenToNode(node: TreeNode, pageName: string, visited: Set<string>) {
-    const allLinks = getAllWikiLinks(pageName);
-    
-    allLinks.forEach((linkTitle) => {
-      // Prevent infinite loops by checking if this page is already in the current path
-      // But allow the same page to appear in different branches of the tree
-      if (!visited.has(linkTitle) && linkTitle !== 'Home') {
-        if (!node.children.has(linkTitle)) {
-          const childNode: TreeNode = {
-            name: linkTitle,
-            path: node.path + '/' + linkTitle,
-            isPage: !!$pages[linkTitle],
-            children: new Map()
-          };
-          node.children.set(linkTitle, childNode);
-          
-          // Recursively add children - track current path to prevent infinite loops
-          const newVisited = new Set(visited);
-          newVisited.add(pageName);
-          addChildrenToNode(childNode, linkTitle, newVisited);
-        }
-      }
-    });
   }
 
   function toggleNode(path: string) {
@@ -911,7 +904,7 @@
     {#if browser}
       <div class="tree-node">
         <div class="tree-item">
-          <TreeNode node={pageTree} {expandedNodes} {toggleNode} {loadPage} {currentTitle} />
+          <TreeNode node={pageTree} {expandedNodes} {toggleNode} {loadPage} {currentTitle} {populateNodeChildren} />
         </div>
       </div>
       {#if orphans.length > 0}
