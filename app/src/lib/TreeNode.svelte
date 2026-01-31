@@ -4,6 +4,7 @@
     path: string;
     isPage: boolean;
     children: Map<string, TreeNodeType>;
+    hasLinks?: boolean;
   };
 
   export let node: TreeNodeType;
@@ -11,14 +12,23 @@
   export let toggleNode: (path: string) => void;
   export let loadPage: (title: string) => void;
   export let currentTitle: string;
+  export let populateNodeChildren: (node: TreeNodeType, pageName: string) => void;
 
-  $: hasChildren = node.children.size > 0;
+  $: hasChildren = node.hasLinks !== undefined ? node.hasLinks : node.children.size > 0;
   $: isExpanded = expandedNodes.has(node.path);
+  
+  function handleToggle() {
+    if (!isExpanded) {
+      // When expanding, populate children on demand
+      populateNodeChildren(node, node.name);
+    }
+    toggleNode(node.path);
+  }
 </script>
 
 <div>
   {#if hasChildren}
-    <button class="tree-toggle" on:click={() => toggleNode(node.path)}>
+    <button class="tree-toggle" on:click={handleToggle}>
       {isExpanded ? '▼' : '▶'}
     </button>
     <span 
@@ -40,6 +50,7 @@
               {toggleNode}
               {loadPage}
               {currentTitle}
+              {populateNodeChildren}
             />
           </div>
         {/each}

@@ -43,14 +43,39 @@ export function restoreBackup(timestamp: number) {
 export function exportData() {
   if (!browser) return '';
   const data = localStorage.getItem('wiki-pages');
-  return data || '{}';
+  if (!data) return '{}';
+  
+  // Ensure export is valid JSON
+  try {
+    const parsed = JSON.parse(data) as Record<string, WikiPage>;
+    // Ensure Home page exists in export
+    if (!parsed['Home']) {
+      parsed['Home'] = { title: 'Home', content: 'Welcome! Try adding links like [Documentation] or [Projects]' };
+    }
+    return JSON.stringify(parsed);
+  } catch (e) {
+    console.error('Error exporting data:', e);
+    return '{}';
+  }
 }
 
 export function importData(jsonString: string) {
   try {
     const data = JSON.parse(jsonString);
     if (typeof data === 'object' && data !== null) {
-      pages.set(data);
+      // Validate and ensure all pages have required fields
+      const validatedData: Record<string, WikiPage> = {};
+      for (const [key, page] of Object.entries(data)) {
+        if (typeof page === 'object' && page !== null) {
+          const p = page as any;
+          // Ensure page has title and content, use defaults if missing
+          validatedData[key] = {
+            title: p.title || key || 'Untitled',
+            content: p.content || ''
+          };
+        }
+      }
+      pages.set(validatedData);
       return true;
     }
   } catch (e) {
