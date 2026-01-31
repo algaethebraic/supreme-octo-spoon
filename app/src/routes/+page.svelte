@@ -1,5 +1,4 @@
 <script lang="ts">
-  export const ssr = false;
   import { pages, type WikiPage } from '$lib/stores/pages';
   import { theme, type ColorScheme, DEFAULT_DARK_COLORS } from '$lib/stores/themes';
   import { getBackups, restoreBackup, exportData, importData } from '$lib/stores/pages';
@@ -51,6 +50,10 @@
   
   // Subscribe to the theme store
   let isDarkMode: boolean;
+  
+  // Reactive declarations for navigation state
+  $: canGoBackState = canGoBack(pageHistory);
+  $: canGoForwardState = canGoForward(pageHistory);
   
   $: expandedNodes = $expandedNodesStore;
 
@@ -123,27 +126,23 @@
   // ===== Navigation functions =====
 
   function goBack() {
+    savePage(); // Save current page before navigating
     const title = navGoBack(pageHistory);
     if (title) {
+      pageHistory = { ...pageHistory }; // Trigger reactivity by creating new object
       currentTitle = title;
       content = $pages[title]?.content || '';
     }
   }
 
   function goForward() {
+    savePage(); // Save current page before navigating
     const title = navGoForward(pageHistory);
     if (title) {
+      pageHistory = { ...pageHistory }; // Trigger reactivity by creating new object
       currentTitle = title;
       content = $pages[title]?.content || '';
     }
-  }
-
-  function canNavigateBack() {
-    return canGoBack(pageHistory);
-  }
-
-  function canNavigateForward() {
-    return canGoForward(pageHistory);
   }
 
   // ===== Page management functions =====
@@ -180,6 +179,8 @@
     
     currentTitle = title;
     addToHistory(pageHistory, title);
+    pageHistory = { ...pageHistory }; // Trigger reactivity to update button states
+    console.log('After loadPage:', title, 'History:', pageHistory.pageHistory, 'Index:', pageHistory.historyIndex);
   }
 
   // ===== Content rendering functions =====
@@ -1130,8 +1131,8 @@
       <h2>{currentTitle}</h2>
 
       <div class="controls">
-        <button on:click={goBack} disabled={!canNavigateBack()}>← Back</button>
-        <button on:click={goForward} disabled={!canNavigateForward()}>Forward →</button>
+        <button on:click={goBack} disabled={!canGoBackState}>← Back</button>
+        <button on:click={goForward} disabled={!canGoForwardState}>Forward →</button>
         <button on:click={handleExport}>Export</button>
         <button on:click={() => importInput.click()}>Import</button>
         <button on:click={() => showBackups = !showBackups}>
