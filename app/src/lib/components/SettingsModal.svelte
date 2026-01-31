@@ -17,7 +17,7 @@
       <!-- Hierarchy Colors Section -->
       <div style="grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Hierarchy View</div>
       
-      {#each ['treeFolder', 'treePage', 'treeToggle', 'treeLink'] as key}
+      {#each ['treeFolder', 'treePage', 'treeToggle', 'treeLink', 'sidebarTitle'] as key}
         <div class="color-picker-item">
           <label for="color-{key}">
             {key.replace(/([A-Z])/g, ' $1').trim()}
@@ -42,39 +42,32 @@
             <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.treeToggle}; font-weight:700; font-size: 14px;">▶ ▼</div>
           {:else if key === 'treeLink'}
             <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.treeLink}; text-decoration: underline; font-weight: 500;">clickable link</div>
+          {:else if key === 'sidebarTitle'}
+            <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.sidebarTitle}; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Pages</div>
           {/if}
         </div>
       {/each}
       
-      <!-- Preview Colors Section -->
-      <div style="grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 8px;">Preview / Links</div>
+      <!-- Text Color Section -->
+      <div style="grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 8px;">Text</div>
       
-      {#each ['sourceLink', 'proxyLink', 'textPrimary'] as key}
-        <div class="color-picker-item">
-          <label for="color-{key}">
-            {key.replace(/([A-Z])/g, ' $1').trim()}
-          </label>
-          <div class="color-input-wrapper">
-            <input 
-              type="color" 
-              id="color-{key}"
-              bind:value={colors[key as keyof ColorScheme]}
-              on:input={() => {
-                onColorChange(colors);
-              }}
-            />
-            <span class="color-value">{colors[key as keyof ColorScheme]}</span>
-          </div>
-          
-          {#if key === 'sourceLink'}
-            <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.sourceLink}; background: rgba(99,102,241,0.06); border-left:3px solid {colors.accent}; font-weight: 600;">[Source]</div>
-          {:else if key === 'proxyLink'}
-            <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.proxyLink}; text-decoration:underline dotted;">proxy link</div>
-          {:else if key === 'textPrimary'}
-            <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.textPrimary};">Body text</div>
-          {/if}
+      <div class="color-picker-item">
+        <label for="color-textPrimary">
+          Body Text
+        </label>
+        <div class="color-input-wrapper">
+          <input 
+            type="color" 
+            id="color-textPrimary"
+            bind:value={colors.textPrimary}
+            on:input={() => {
+              onColorChange(colors);
+            }}
+          />
+          <span class="color-value">{colors.textPrimary}</span>
         </div>
-      {/each}
+        <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.textPrimary};">Body text</div>
+      </div>
     </div>
 
     <div class="settings-buttons">

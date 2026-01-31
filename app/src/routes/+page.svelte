@@ -488,6 +488,8 @@
     --danger-hover: #dc2626;
     --success: #10b981;
     --warning: #f59e0b;
+    --source-link: #818cf8;
+    --proxy-link: #a0a0a0;
   }
 
   .container {
@@ -542,19 +544,19 @@
 
   .viewer a.source-link:hover {
     background-color: rgba(99, 102, 241, 0.25);
-    color: var(--accent);
+    color: var(--source-link);
   }
 
   .viewer a.proxy-link {
     color: var(--proxy-link);
     text-decoration: dotted underline;
-    opacity: 0.7;
+    opacity: 1;
     border-bottom: 1px dotted rgba(99, 102, 241, 0.4);
   }
 
   .viewer a.proxy-link:hover {
     opacity: 1;
-    color: var(--accent-light);
+    color: var(--proxy-link);
     border-bottom: 1px solid var(--accent-light);
   }
 
@@ -643,7 +645,7 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.1em;
-    color: #f5f5f5;
+    color: var(--sidebar-title);
     border-bottom: 2px solid var(--accent);
     padding-bottom: 8px;
   }
@@ -722,11 +724,6 @@
     color: var(--tree-folder);
     cursor: default;
     font-size: 14px;
-  }
-
-  :global(.tree-page) {
-    color: var(--tree-page);
-    font-weight: 500;
   }
 
   :global(.tree-children) {

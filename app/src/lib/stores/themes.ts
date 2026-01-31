@@ -23,6 +23,7 @@ export type ColorScheme = {
   treeLink: string;
   sourceLink: string;
   proxyLink: string;
+  sidebarTitle: string;
 };
 
 export const DEFAULT_DARK_COLORS: ColorScheme = {
@@ -46,7 +47,8 @@ export const DEFAULT_DARK_COLORS: ColorScheme = {
   treeToggle: '#fbbf24',
   treeLink: '#818cf8',
   sourceLink: '#818cf8',
-  proxyLink: '#a0a0a0'
+  proxyLink: '#a0a0a0',
+  sidebarTitle: '#f5f5f5'
 };
 
 export const DEFAULT_LIGHT_COLORS: ColorScheme = {
@@ -70,7 +72,8 @@ export const DEFAULT_LIGHT_COLORS: ColorScheme = {
   treeToggle: '#0066cc',
   treeLink: '#0066cc',
   sourceLink: '#0066cc',
-  proxyLink: '#666666'
+  proxyLink: '#666666',
+  sidebarTitle: '#333333'
 };
 
 function createThemeStore() {

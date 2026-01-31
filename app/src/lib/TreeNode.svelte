@@ -60,7 +60,7 @@
     <div class="tree-leaf">
       <span class="tree-toggle-placeholder"></span>
       <span
-        class="tree-label tree-folder"
+        class="tree-label tree-page"
         on:click={() => { if (document.activeElement?.tagName !== 'TEXTAREA') loadPage(node.name); }}
         role="button"
         tabindex="0"
@@ -80,37 +80,38 @@
     padding: 0;
     margin-right: 4px;
     width: 20px;
-    color: #666;
+    color: var(--tree-toggle);
     font-size: 12px;
     display: inline-block;
+    transition: all 0.2s;
+    font-weight: 600;
   }
 
   .tree-toggle:hover {
-    color: #000;
+    opacity: 0.8;
+    transform: scale(1.15);
   }
 
   .tree-label {
     cursor: pointer;
-    color: #0066cc;
+    color: var(--tree-link);
     text-decoration: none;
     padding: 2px 4px;
     border-radius: 2px;
     display: inline-block;
+    transition: all 0.2s;
   }
 
   .tree-label:hover {
-    background-color: #f0f0f0;
+    background-color: rgba(99, 102, 241, 0.2);
     text-decoration: underline;
+    color: var(--tree-page);
   }
 
   .tree-folder {
     font-weight: 500;
-    color: #333;
+    color: var(--tree-folder);
     cursor: default;
-  }
-
-  .tree-page {
-    color: #0066cc;
   }
 
   .tree-children {
