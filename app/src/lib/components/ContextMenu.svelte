@@ -15,8 +15,8 @@
 
 <style>
   .context-menu {
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+    background-color: var(--surface-background);
+    border: 1px solid var(--border-line);
     border-radius: 6px;
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
     min-width: 150px;
@@ -27,7 +27,7 @@
     width: 100%;
     padding: 12px 16px;
     background-color: transparent;
-    color: var(--text-primary);
+    color: var(--main-text);
     border: none;
     cursor: pointer;
     font-size: 13px;
@@ -37,6 +37,6 @@
   }
 
   .context-menu button:hover {
-    background-color: var(--bg-tertiary);
+    background-color: var(--deep-background);
   }
 </style>

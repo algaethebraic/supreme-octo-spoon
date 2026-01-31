@@ -72,8 +72,8 @@
   }
 
   .modal {
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+    background-color: var(--surface-background);
+    border: 1px solid var(--border-line);
     border-radius: 12px;
     padding: 24px;
     max-width: 500px;
@@ -84,17 +84,17 @@
 
   .modal h3 {
     margin: 0 0 16px 0;
-    color: var(--text-primary);
+    color: var(--main-text);
   }
 
   .conflict-item {
     margin-bottom: 16px;
-    color: var(--text-secondary);
+    color: var(--secondary-text);
     line-height: 1.6;
   }
 
   .conflict-item strong {
-    color: var(--text-primary);
+    color: var(--main-text);
   }
 
   .conflict-item p {
@@ -107,15 +107,15 @@
     align-items: center;
     padding: 12px;
     margin-bottom: 8px;
-    background-color: var(--bg-tertiary);
-    border: 1px solid var(--border-color);
+    background-color: var(--deep-background);
+    border: 1px solid var(--border-line);
     border-radius: 6px;
     cursor: pointer;
     transition: background-color 0.2s;
   }
 
   .source-option:hover {
-    background-color: var(--bg-hover);
+    background-color: var(--hover-background);
   }
 
   .source-option input[type="radio"] {
@@ -126,7 +126,7 @@
   .source-link-button {
     background: none;
     border: none;
-    color: var(--accent-light);
+    color: var(--primary-action-light);
     cursor: pointer;
     text-decoration: none;
     padding: 0;
@@ -136,7 +136,7 @@
   }
 
   .source-link-button:hover {
-    color: var(--accent);
+    color: var(--primary-action);
   }
 
   .modal-buttons {
@@ -145,12 +145,12 @@
     justify-content: flex-end;
     margin-top: 20px;
     padding-top: 16px;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--border-line);
   }
 
   .modal-buttons button {
     padding: 8px 16px;
-    background-color: var(--accent);
+    background-color: var(--primary-action);
     color: white;
     border: none;
     border-radius: 6px;
@@ -161,12 +161,12 @@
   }
 
   .modal-buttons button:hover:not(:disabled) {
-    background-color: var(--accent-hover);
+    background-color: var(--primary-action-hover);
   }
 
   .modal-buttons button:disabled {
-    background-color: var(--bg-tertiary);
-    color: var(--text-tertiary);
+    background-color: var(--deep-background);
+    color: var(--muted-text);
     cursor: not-allowed;
   }
 </style>

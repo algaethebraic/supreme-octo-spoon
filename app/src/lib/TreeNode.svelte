@@ -80,7 +80,7 @@
     padding: 0;
     margin-right: 4px;
     width: 20px;
-    color: var(--tree-toggle);
+    color: var(--expand-toggle);
     font-size: 12px;
     display: inline-block;
     transition: all 0.2s;
@@ -94,7 +94,7 @@
 
   .tree-label {
     cursor: pointer;
-    color: var(--tree-link);
+    color: var(--link-in-tree);
     text-decoration: none;
     padding: 2px 4px;
     border-radius: 2px;
@@ -105,12 +105,12 @@
   .tree-label:hover {
     background-color: rgba(99, 102, 241, 0.2);
     text-decoration: underline;
-    color: var(--tree-page);
+    color: var(--page-icon);
   }
 
   .tree-folder {
     font-weight: 500;
-    color: var(--tree-folder);
+    color: var(--folder-icon);
     cursor: default;
   }
 

@@ -30,8 +30,8 @@
   }
 
   .modal {
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+    background-color: var(--surface-background);
+    border: 1px solid var(--border-line);
     border-radius: 12px;
     padding: 24px;
     max-width: 400px;
@@ -40,17 +40,17 @@
 
   .modal h3 {
     margin: 0 0 16px 0;
-    color: var(--text-primary);
+    color: var(--main-text);
   }
 
   .modal p {
-    color: var(--text-secondary);
+    color: var(--secondary-text);
     line-height: 1.6;
     margin: 0 0 20px 0;
   }
 
   .modal p strong {
-    color: var(--text-primary);
+    color: var(--main-text);
   }
 
   .modal-buttons {
@@ -61,7 +61,7 @@
 
   .modal-buttons button {
     padding: 8px 16px;
-    background-color: var(--accent);
+    background-color: var(--primary-action);
     color: white;
     border: none;
     border-radius: 6px;
@@ -72,6 +72,6 @@
   }
 
   .modal-buttons button:hover {
-    background-color: var(--accent-hover);
+    background-color: var(--primary-action-hover);
   }
 </style>

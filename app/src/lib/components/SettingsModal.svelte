@@ -7,68 +7,72 @@
   export let onColorChange: (colors: ColorScheme) => void;
   export let onResetDefaults: () => void;
   export let onClose: () => void;
+
+  const colorLabels: Record<keyof ColorScheme, string> = {
+    mainBackground: 'Main Background',
+    surfaceBackground: 'Surface Background',
+    deepBackground: 'Deep Background',
+    hoverBackground: 'Hover Background',
+    mainText: 'Main Text',
+    secondaryText: 'Secondary Text',
+    mutedText: 'Muted Text',
+    borderLine: 'Border Lines',
+    primaryAction: 'Primary Action (Buttons)',
+    primaryActionHover: 'Primary Action Hover',
+    primaryActionLight: 'Primary Action Light',
+    errorRed: 'Error Red',
+    errorRedHover: 'Error Red Hover',
+    successGreen: 'Success Green',
+    warningOrange: 'Warning Orange',
+    folderIcon: 'Folder Icon',
+    pageIcon: 'Page Icon',
+    expandToggle: 'Expand/Collapse Toggle',
+    linkInTree: 'Links in Tree',
+    linkExplicit: 'Explicit Links [Page]',
+    linkBackref: 'Backref Links',
+    sidebarLabel: 'Sidebar Label',
+    pageTitle: 'Page Title'
+  };
+
+  const sections: Record<string, Array<keyof ColorScheme>> = {
+    'Background Colors': ['mainBackground', 'surfaceBackground', 'deepBackground', 'hoverBackground'],
+    'Text Colors': ['mainText', 'secondaryText', 'mutedText', 'pageTitle'],
+    'UI Elements': ['borderLine', 'primaryAction', 'primaryActionHover', 'primaryActionLight'],
+    'Status Colors': ['errorRed', 'errorRedHover', 'successGreen', 'warningOrange'],
+    'Sidebar & Tree': ['folderIcon', 'pageIcon', 'expandToggle', 'sidebarLabel'],
+    'Links': ['linkInTree', 'linkExplicit', 'linkBackref']
+  };
 </script>
 
 <div class="modal-overlay" on:click={onClose}>
   <div class="modal settings-modal" on:click|stopPropagation>
     <h3>Color Settings</h3>
     
-    <div class="color-picker-grid">
-      <!-- Hierarchy Colors Section -->
-      <div style="grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Hierarchy View</div>
-      
-      {#each ['treeFolder', 'treePage', 'treeToggle', 'treeLink', 'sidebarTitle'] as key}
-        <div class="color-picker-item">
-          <label for="color-{key}">
-            {key.replace(/([A-Z])/g, ' $1').trim()}
-          </label>
-          <div class="color-input-wrapper">
-            <input 
-              type="color" 
-              id="color-{key}"
-              bind:value={colors[key as keyof ColorScheme]}
-              on:input={() => {
-                onColorChange(colors);
-              }}
-            />
-            <span class="color-value">{colors[key as keyof ColorScheme]}</span>
-          </div>
-          
-          {#if key === 'treeFolder'}
-            <div class="sample" style="margin-top:8px; padding:6px 8px; border-radius:6px; background:{colors.treeFolder}; color:{colors.textPrimary}; border:1px solid {colors.borderColor}; font-weight: 600;">Folder</div>
-          {:else if key === 'treePage'}
-            <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.treePage}; font-weight:600;">📄 Page Name</div>
-          {:else if key === 'treeToggle'}
-            <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.treeToggle}; font-weight:700; font-size: 14px;">▶ ▼</div>
-          {:else if key === 'treeLink'}
-            <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.treeLink}; text-decoration: underline; font-weight: 500;">clickable link</div>
-          {:else if key === 'sidebarTitle'}
-            <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.sidebarTitle}; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Pages</div>
-          {/if}
+    {#each Object.entries(sections) as [sectionName, keys]}
+      <div class="section">
+        <div class="section-title">{sectionName}</div>
+        <div class="color-picker-grid">
+          {#each keys as key}
+            <div class="color-picker-item">
+              <label for="color-{key}">
+                {colorLabels[key]}
+              </label>
+              <div class="color-input-wrapper">
+                <input 
+                  type="color" 
+                  id="color-{key}"
+                  bind:value={colors[key]}
+                  on:input={() => {
+                    onColorChange(colors);
+                  }}
+                />
+                <span class="color-value">{colors[key]}</span>
+              </div>
+            </div>
+          {/each}
         </div>
-      {/each}
-      
-      <!-- Text Color Section -->
-      <div style="grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 8px;">Text</div>
-      
-      <div class="color-picker-item">
-        <label for="color-textPrimary">
-          Body Text
-        </label>
-        <div class="color-input-wrapper">
-          <input 
-            type="color" 
-            id="color-textPrimary"
-            bind:value={colors.textPrimary}
-            on:input={() => {
-              onColorChange(colors);
-            }}
-          />
-          <span class="color-value">{colors.textPrimary}</span>
-        </div>
-        <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{colors.textPrimary};">Body text</div>
       </div>
-    </div>
+    {/each}
 
     <div class="settings-buttons">
       <button on:click={onResetDefaults} class="secondary-btn">Reset to Default</button>
@@ -94,85 +98,97 @@
   }
 
   .modal {
-    background-color: var(--bg-secondary);
-    border: 1px solid var(--border-color);
+    background-color: var(--surface-background);
+    border: 1px solid var(--border-line);
     border-radius: 12px;
     padding: 24px;
-    max-width: 600px;
-    max-height: 80vh;
+    max-width: 700px;
+    max-height: 85vh;
     overflow-y: auto;
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
   }
 
   .modal h3 {
     margin: 0 0 20px 0;
-    color: var(--text-primary);
+    color: var(--main-text);
+  }
+
+  .section {
+    margin-bottom: 24px;
+  }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--secondary-text);
+    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-line);
   }
 
   .color-picker-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-    margin-bottom: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
   }
 
   .color-picker-item {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
   .color-picker-item label {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
-    color: var(--text-secondary);
     text-transform: uppercase;
+    color: var(--secondary-text);
     letter-spacing: 0.05em;
   }
 
   .color-input-wrapper {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
   }
 
   .color-input-wrapper input[type="color"] {
-    width: 48px;
-    height: 36px;
-    border: 2px solid var(--border-color);
+    width: 44px;
+    height: 32px;
+    border: 2px solid var(--border-line);
     border-radius: 6px;
     cursor: pointer;
     transition: border-color 0.2s;
   }
 
   .color-input-wrapper input[type="color"]:hover {
-    border-color: var(--accent);
+    border-color: var(--primary-action);
   }
 
   .color-value {
-    font-size: 12px;
-    font-family: 'Fira Code', monospace;
-    color: var(--text-tertiary);
+    font-size: 10px;
+    font-family: 'Courier New', monospace;
+    color: var(--muted-text);
     flex: 1;
-  }
-
-  .sample {
-    border-radius: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .settings-buttons {
     display: flex;
     justify-content: space-between;
     gap: 12px;
-    margin-top: 20px;
+    margin-top: 24px;
     padding-top: 16px;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--border-line);
   }
 
   .settings-buttons button {
     flex: 1;
-    padding: 8px 16px;
-    background-color: var(--accent);
+    padding: 10px 16px;
+    background-color: var(--primary-action);
     color: white;
     border: none;
     border-radius: 6px;
@@ -183,16 +199,16 @@
   }
 
   .settings-buttons button:hover {
-    background-color: var(--accent-hover);
+    background-color: var(--primary-action-hover);
   }
 
   .secondary-btn {
-    background-color: var(--bg-tertiary) !important;
-    color: var(--text-primary) !important;
-    border: 1px solid var(--border-color) !important;
+    background-color: var(--deep-background) !important;
+    color: var(--main-text) !important;
+    border: 1px solid var(--border-line) !important;
   }
 
   .secondary-btn:hover {
-    background-color: var(--bg-hover) !important;
+    background-color: var(--hover-background) !important;
   }
 </style>
