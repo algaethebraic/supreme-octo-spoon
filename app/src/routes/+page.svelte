@@ -1,13 +1,22 @@
 <script lang="ts">
   export const ssr = false;
-  import { pages } from '$lib/stores/pages';
-  import { parseWikiLinks } from '$lib/wiki';
+  import { pages, type WikiPage } from '$lib/stores/pages';
+  import { theme, type ColorScheme, DEFAULT_DARK_COLORS } from '$lib/stores/themes';
   import { getBackups, restoreBackup, exportData, importData } from '$lib/stores/pages';
+  import { buildPageTree, populateNodeChildren, collectAllNodePaths, type TreeNode as TreeNodeType } from '$lib/tree';
+  import { renderContent } from '$lib/wiki';
+  import { createPageHistory, canGoBack, canGoForward, goBack as navGoBack, goForward as navGoForward, addToHistory } from '$lib/navigation';
+  import { findConflicts, applyConflictResolutions, type ConflictItem } from '$lib/sanitizer';
   import { get, derived, writable } from 'svelte/store';
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
   import TreeNode from '$lib/TreeNode.svelte';
+  import ConflictModal from '$lib/components/ConflictModal.svelte';
+  import DeleteModal from '$lib/components/DeleteModal.svelte';
+  import SettingsModal from '$lib/components/SettingsModal.svelte';
+  import ContextMenu from '$lib/components/ContextMenu.svelte';
 
+  // State management
   let currentTitle = 'Home';
   let content = '';
   let backups = getBackups();
@@ -16,9 +25,9 @@
   let container: HTMLDivElement;
   let sidebarWidth = 220;
   let isResizing = false;
+  
   const expandedNodesStore = writable(new Set<string>());
-  let pageHistory: string[] = ['Home'];
-  let historyIndex: number = 0;
+  let pageHistory = createPageHistory();
   
   // Context menu variables
   let showContextMenu = false;
@@ -26,12 +35,9 @@
   let selectedWord = '';
   let menuText = '';
   
-  // Subscribe to the store
-  $: expandedNodes = $expandedNodesStore;
-  
   // Sanitize mode variables
   let isSanitizing = false;
-  let sanitizeConflicts: Array<{ pageName: string; sources: string[] }> = [];
+  let sanitizeConflicts: ConflictItem[] = [];
   let currentConflictIndex = 0;
   let conflictResolutions: Record<string, string> = {};
   
@@ -39,244 +45,31 @@
   let showDeleteConfirm = false;
   let pageToDelete: string | null = null;
   
-  // Dark mode toggle
-  let isDarkMode = true;
-
-  // Settings and color customization
+  // Settings modal state
   let showSettings = false;
-  let activeColorTab: 'dark' | 'light' = 'dark';
+  let currentEditingColors: ColorScheme = { ...DEFAULT_DARK_COLORS };
   
-  type ColorScheme = {
-    bgPrimary: string;
-    bgSecondary: string;
-    bgTertiary: string;
-    bgHover: string;
-    textPrimary: string;
-    textSecondary: string;
-    textTertiary: string;
-    borderColor: string;
-    accent: string;
-    accentHover: string;
-    accentLight: string;
-    danger: string;
-    dangerHover: string;
-    success: string;
-    warning: string;
-    treeFolder: string;
-    treePage: string;
-    treeToggle: string;
-    treeLink: string;
-    sourceLink: string;
-    proxyLink: string;
-  };
+  // Subscribe to the theme store
+  let isDarkMode: boolean;
+  
+  $: expandedNodes = $expandedNodesStore;
 
-  const defaultDarkColors: ColorScheme = {
-    bgPrimary: '#1a1a1a',
-    bgSecondary: '#242424',
-    bgTertiary: '#2d2d2d',
-    bgHover: '#333333',
-    textPrimary: '#e0e0e0',
-    textSecondary: '#a0a0a0',
-    textTertiary: '#808080',
-    borderColor: '#404040',
-    accent: '#6366f1',
-    accentHover: '#4f46e5',
-    accentLight: '#818cf8',
-    danger: '#ef4444',
-    dangerHover: '#dc2626',
-    success: '#10b981',
-    warning: '#f59e0b',
-    treeFolder: '#f5f5f5',
-    treePage: '#fbbf24',
-    treeToggle: '#fbbf24',
-    treeLink: '#818cf8',
-    sourceLink: '#818cf8',
-    proxyLink: '#a0a0a0'
-  };
-
-  const defaultLightColors: ColorScheme = {
-    bgPrimary: '#ffffff',
-    bgSecondary: '#f8f8f8',
-    bgTertiary: '#f0f0f0',
-    bgHover: '#e8e8e8',
-    textPrimary: '#1a1a1a',
-    textSecondary: '#666666',
-    textTertiary: '#999999',
-    borderColor: '#e0e0e0',
-    accent: '#6366f1',
-    accentHover: '#4f46e5',
-    accentLight: '#818cf8',
-    danger: '#ef4444',
-    dangerHover: '#dc2626',
-    success: '#10b981',
-    warning: '#f59e0b',
-    treeFolder: '#333333',
-    treePage: '#0066cc',
-    treeToggle: '#0066cc',
-    treeLink: '#0066cc',
-    sourceLink: '#0066cc',
-    proxyLink: '#666666'
-  };
-
-  let darkColors: ColorScheme = { ...defaultDarkColors };
-  let lightColors: ColorScheme = { ...defaultLightColors };
-  let currentEditingColors: ColorScheme = { ...defaultDarkColors };
-
+  // ===== Color management functions =====
+  
   function applyColors(colors: ColorScheme) {
-    const root = document.documentElement;
-    Object.entries(colors).forEach(([key, value]) => {
-      const cssVarName = `--${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`;
-      root.style.setProperty(cssVarName, value);
-    });
-  }
-
-  function saveColorSettings() {
-    if (browser) {
-      localStorage.setItem('wiki-dark-colors', JSON.stringify(darkColors));
-      localStorage.setItem('wiki-light-colors', JSON.stringify(lightColors));
-    }
-  }
-
-  function loadColorSettings() {
-    if (browser) {
-      const saved = localStorage.getItem('wiki-dark-colors');
-      if (saved) {
-        try {
-          darkColors = { ...defaultDarkColors, ...JSON.parse(saved) };
-        } catch (e) {
-          darkColors = { ...defaultDarkColors };
-        }
-      }
-      const savedLight = localStorage.getItem('wiki-light-colors');
-      if (savedLight) {
-        try {
-          lightColors = { ...defaultLightColors, ...JSON.parse(savedLight) };
-        } catch (e) {
-          lightColors = { ...defaultLightColors };
-        }
-      }
-    }
+    theme.applyColors(colors);
   }
 
   function resetColorsToDefault() {
-    if (activeColorTab === 'dark') {
-      darkColors = { ...defaultDarkColors };
-    } else {
-      lightColors = { ...defaultLightColors };
-    }
-    saveColorSettings();
-    applyColors(activeColorTab === 'dark' ? darkColors : lightColors);
+    theme.resetToDefaults();
+    theme.subscribe(state => {
+      isDarkMode = state.isDarkMode;
+      currentEditingColors = isDarkMode ? { ...state.darkColors } : { ...state.lightColors };
+      applyColors(currentEditingColors);
+    })();
   }
 
-  type TreeNode = {
-    name: string;
-    path: string;
-    isPage: boolean;
-    children: Map<string, TreeNode>;
-    hasLinks: boolean;
-  };
-
-  function buildPageTree(): TreeNode {
-    // Add links from Home (both source and proxy links)
-    const allLinksFromHome = getAllWikiLinks('Home');
-    
-    const root: TreeNode = {
-      name: 'Home',
-      path: 'Home',
-      isPage: false,
-      children: new Map(),
-      hasLinks: allLinksFromHome.size > 0
-    };
-    
-    allLinksFromHome.forEach((linkTitle) => {
-      if (!root.children.has(linkTitle)) {
-        const node: TreeNode = {
-          name: linkTitle,
-          path: 'Home/' + linkTitle,
-          isPage: !!$pages[linkTitle],
-          children: new Map(),
-          hasLinks: getAllWikiLinks(linkTitle).size > 0
-        };
-        root.children.set(linkTitle, node);
-      }
-    });
-
-    return root;
-  }
-
-  function populateNodeChildren(node: TreeNode, pageName: string) {
-    // Lazy-load children when a node is expanded
-    if (node.children.size > 0) return; // Already populated
-    
-    const allLinks = getAllWikiLinks(pageName);
-    
-    allLinks.forEach((linkTitle) => {
-      if (linkTitle !== 'Home' && !node.children.has(linkTitle)) {
-        const childNode: TreeNode = {
-          name: linkTitle,
-          path: node.path + '/' + linkTitle,
-          isPage: !!$pages[linkTitle],
-          children: new Map(),
-          hasLinks: getAllWikiLinks(linkTitle).size > 0
-        };
-        node.children.set(linkTitle, childNode);
-      }
-    });
-  }
-
-  function getAllWikiLinks(pageName: string): Set<string> {
-    const allLinks = new Set<string>();
-    
-    // Get source links (explicit [text] links on this page)
-    const page = $pages[pageName];
-    if (page) {
-      const linkRegex = /\[([^\]]+)\]/g;
-      let match;
-      while ((match = linkRegex.exec(page.content)) !== null) {
-        const trimmedLink = match[1].trim();
-        if (trimmedLink) {
-          allLinks.add(trimmedLink);
-        }
-      }
-    }
-    
-    // Get proxy links - page names mentioned outside of brackets
-    if (page?.content) {
-      // Remove all bracketed content to check for mentions outside brackets
-      const contentWithoutBrackets = page.content.replace(/\[[^\]]*\]/g, '');
-      
-      Object.keys($pages).forEach((otherPageName) => {
-        if (otherPageName !== pageName) {
-          // Check if page name appears as a whole word (with word boundaries)
-          const escapedName = otherPageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          const regex = new RegExp(`\\b${escapedName}\\b`, 'gi');
-          if (regex.test(contentWithoutBrackets)) {
-            allLinks.add(otherPageName);
-          }
-        }
-      });
-    }
-    
-    // Note: We don't include backlinks here - only links FROM this page
-    // (source links and proxy/mentioned links)
-    
-    const sourceLinksFromPage = page ? Array.from(page.content.matchAll(/\[([^\]]+)\]/g)).map(m => m[1].trim()) : [];
-    const contentWithoutBrackets = page?.content.replace(/\[[^\]]*\]/g, '') || '';
-    const mentionedPages = page ? Object.keys($pages).filter(p => {
-      if (p === pageName) return false;
-      const escapedName = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\b${escapedName}\\b`, 'gi');
-      return regex.test(contentWithoutBrackets);
-    }) : [];
-    
-    console.log(`getAllWikiLinks("${pageName}"):`, {
-      sourceLinks: sourceLinksFromPage,
-      mentioned: mentionedPages,
-      combined: Array.from(allLinks)
-    });
-    
-    return allLinks;
-  }
+  // ===== Tree management functions =====
 
   function toggleNode(path: string) {
     expandedNodesStore.update(set => {
@@ -289,21 +82,21 @@
     });
   }
 
-  const pageTreeStore = derived(pages, $pages => buildPageTree());
-  let pageTree: TreeNode;
+  // Wrapper for populateNodeChildren that provides the pages context
+  function populateNodeChildrenWrapper(node: TreeNodeType, pageName: string) {
+    populateNodeChildren(node, pageName, $pages);
+  }
+
+  const pageTreeStore = derived(pages, $pages => buildPageTree($pages));
+  let pageTree: TreeNodeType;
   $: pageTree = $pageTreeStore;
 
   $: expandedNodesStore.update(set => {
-    const existing = new Set<string>();
-    const collect = (node: TreeNode) => {
-      existing.add(node.path);
-      for (const child of node.children.values()) {
-        collect(child);
-      }
-    };
-    collect(pageTree);
+    const existing = collectAllNodePaths(pageTree);
     return new Set([...set].filter(p => existing.has(p)));
   });
+
+  // ===== Sidebar and resizing functions =====
 
   function startResize(e: MouseEvent) {
     isResizing = true;
@@ -327,23 +120,33 @@
     document.removeEventListener('mouseup', stopResize);
   }
 
+  // ===== Navigation functions =====
+
   function goBack() {
-    if (historyIndex > 0) {
-      historyIndex--;
-      const title = pageHistory[historyIndex];
+    const title = navGoBack(pageHistory);
+    if (title) {
       currentTitle = title;
       content = $pages[title]?.content || '';
     }
   }
 
   function goForward() {
-    if (historyIndex < pageHistory.length - 1) {
-      historyIndex++;
-      const title = pageHistory[historyIndex];
+    const title = navGoForward(pageHistory);
+    if (title) {
       currentTitle = title;
       content = $pages[title]?.content || '';
     }
   }
+
+  function canNavigateBack() {
+    return canGoBack(pageHistory);
+  }
+
+  function canNavigateForward() {
+    return canGoForward(pageHistory);
+  }
+
+  // ===== Page management functions =====
 
   function savePage() {
     pages.update((p) => {
@@ -356,46 +159,6 @@
       };
     });
   }
-
-  function getSourceLinkedPages(pages: Record<string, WikiPage>): Set<string> {
-    const sourceLinks = new Set<string>();
-    
-    Object.values(pages).forEach((page) => {
-      const linkRegex = /\[([^\]]+)\]/g;
-      let match;
-      while ((match = linkRegex.exec(page.content)) !== null) {
-        sourceLinks.add(match[1].trim());
-      }
-    });
-    
-    return sourceLinks;
-  }
-
-  function renderContent(text: string) {
-    const sourceLinkedPages = getSourceLinkedPages($pages);
-    
-    // First, handle source links (explicit [[...]] format)
-    let result = parseWikiLinks(text, (title) => {
-      const trimmedTitle = title.trim();
-      return `<a href="#" data-link="${trimmedTitle}" class="source-link">${trimmedTitle}</a>`;
-    });
-    
-    // Then, handle proxy links (page names without brackets that have source links)
-    sourceLinkedPages.forEach((pageName) => {
-      if (!pageName) return;
-      
-      // Find words that match page names but aren't already in links
-      const escapedPageName = pageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      // Match the page name but only if it's not inside an <a> tag or [...]
-      const regex = new RegExp(`(?<!\\[)(?<![>\\w])\\b${escapedPageName}\\b(?!\\])(?![^<]*</)`, 'gi');
-      
-      result = result.replace(regex, `<a href="#" data-link="${pageName}" class="proxy-link">${pageName}</a>`);
-    });
-    
-    return result;
-  }
-
-  $: renderedContent = renderContent(content);
 
   function loadPage(title: string) {
     const currentPage = $pages[title];
@@ -416,14 +179,18 @@
     }
     
     currentTitle = title;
-    
-    // Update history
-    if (pageHistory[historyIndex] !== title) {
-      pageHistory = pageHistory.slice(0, historyIndex + 1);
-      pageHistory.push(title);
-      historyIndex = pageHistory.length - 1;
-    }
+    addToHistory(pageHistory, title);
   }
+
+  // ===== Content rendering functions =====
+
+  function renderPageContent(text: string) {
+    return renderContent(text, $pages);
+  }
+
+  $: renderedContent = renderPageContent(content);
+
+  // ===== Link handling functions =====
 
   function handleClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
@@ -435,6 +202,8 @@
       loadPage(link.getAttribute('data-link')!);
     }
   }
+
+  // ===== Context menu functions =====
 
   function handleContextMenu(e: MouseEvent) {
     const textarea = e.target as HTMLTextAreaElement;
@@ -483,6 +252,8 @@
     showContextMenu = false;
   }
 
+  // ===== Import/Export functions =====
+
   function handleExport() {
     const data = exportData();
     const blob = new Blob([data], { type: 'application/json' });
@@ -524,88 +295,27 @@
     }
   }
 
-  pages.subscribe(() => {
-    if (!$pages[currentTitle]) {
-      loadPage('Home');
-    }
-  });
+  // ===== Wiki link helper functions =====
 
-  onMount(() => {
-    loadPage(currentTitle);
-    if (browser) {
-      // Load color settings
-      loadColorSettings();
-      activeColorTab = isDarkMode ? 'dark' : 'light';
-      currentEditingColors = isDarkMode ? { ...darkColors } : { ...lightColors };
-      applyColors(isDarkMode ? darkColors : lightColors);
-
-      const saved = localStorage.getItem('expandedNodes');
-      if (saved) {
-        try {
-          expandedNodesStore.set(new Set(JSON.parse(saved)));
-        } catch (e) {
-          expandedNodesStore.set(new Set(['Home']));
-        }
-      } else {
-        expandedNodesStore.set(new Set(['Home']));
-      }
-      // Load sidebar width
-      const savedWidth = localStorage.getItem('sidebarWidth');
-      if (savedWidth) sidebarWidth = parseInt(savedWidth);
-      // Set initial sidebar width
-      if (container) container.style.setProperty('--sidebar-width', sidebarWidth + 'px');
-    }
-
-    // Hide context menu on click outside
-    const handleGlobalClick = () => {
-      showContextMenu = false;
-    };
-    document.addEventListener('click', handleGlobalClick);
-
-    return () => {
-      document.removeEventListener('click', handleGlobalClick);
-    };
-  });
-
-  $: if (browser) localStorage.setItem('expandedNodes', JSON.stringify(Array.from($expandedNodesStore)));
-  
-  // When isDarkMode changes, apply the appropriate colors
-  $: if (browser && !showSettings) {
-    const colorsToApply = isDarkMode ? darkColors : lightColors;
-    applyColors(colorsToApply);
-  }
-
-  $: sourceLinkedPages = getSourceLinkedPages($pages);
-  $: orphans = Object.keys($pages).filter(p => !sourceLinkedPages.has(p) && p !== 'Home');
-
-  $: if (container) container.style.setProperty('--sidebar-width', sidebarWidth + 'px');
-
-  function findConflicts(): Array<{ pageName: string; sources: string[] }> {
-    const sourceMap: Record<string, string[]> = {};
-    const allPages = get(pages);
+  function getSourceLinkedPages(pages: Record<string, WikiPage>): Set<string> {
+    const sourceLinks = new Set<string>();
     
-    // Find all source links and track which pages have them
-    Object.entries(allPages).forEach(([pageName, page]) => {
+    Object.values(pages).forEach((page) => {
       const linkRegex = /\[([^\]]+)\]/g;
       let match;
-      
       while ((match = linkRegex.exec(page.content)) !== null) {
-        const linkedPageName = match[1].trim();
-        if (!sourceMap[linkedPageName]) {
-          sourceMap[linkedPageName] = [];
-        }
-        sourceMap[linkedPageName].push(pageName);
+        sourceLinks.add(match[1].trim());
       }
     });
     
-    // Return only pages with multiple sources
-    return Object.entries(sourceMap)
-      .filter(([_, sources]) => sources.length > 1)
-      .map(([pageName, sources]) => ({ pageName, sources: Array.from(new Set(sources)) }));
+    return sourceLinks;
   }
 
+  // ===== Sanitization functions =====
+
   function startSanitize() {
-    const conflicts = findConflicts();
+    const allPages = get(pages);
+    const conflicts = findConflicts(allPages);
     if (conflicts.length === 0) {
       alert('No conflicts found. Your wiki is clean!');
       return;
@@ -635,26 +345,10 @@
 
   function applySanitization() {
     const allPages = get(pages);
-    
-    // For each conflict, remove [[ ]] from non-chosen sources
-    Object.entries(conflictResolutions).forEach(([pageName, chosenSource]) => {
-      const conflict = sanitizeConflicts.find(c => c.pageName === pageName);
-      if (!conflict) return;
-      
-      // Update each source page
-      conflict.sources.forEach((sourcePage) => {
-        if (sourcePage !== chosenSource) {
-          // Remove [ ] from this source page
-          allPages[sourcePage].content = allPages[sourcePage].content.replace(
-            new RegExp(`\\[${pageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`, 'g'),
-            pageName
-          );
-        }
-      });
-    });
+    const updatedPages = applyConflictResolutions(allPages, sanitizeConflicts, conflictResolutions);
     
     // Update all pages at once
-    pages.set(allPages);
+    pages.set(updatedPages);
     
     // Exit sanitize mode
     isSanitizing = false;
@@ -672,6 +366,8 @@
     conflictResolutions = {};
   }
 
+  // ===== Delete functions =====
+
   function confirmDelete(pageName: string) {
     pageToDelete = pageName;
     showDeleteConfirm = true;
@@ -680,14 +376,15 @@
   function deletePage() {
     if (!pageToDelete) return;
     
+    const titleToDelete = pageToDelete;
     pages.update(p => {
       const updated = { ...p };
-      delete updated[pageToDelete];
+      delete updated[titleToDelete];
       return updated;
     });
     
     // If we're viewing the deleted page, go to Home
-    if (currentTitle === pageToDelete) {
+    if (currentTitle === titleToDelete) {
       loadPage('Home');
     }
     
@@ -700,14 +397,68 @@
     pageToDelete = null;
   }
 
-  // Keep track of last tab to avoid overwriting edits when not switching
-  let _lastAppliedColorTab: 'dark' | 'light' = activeColorTab;
+  // ===== Lifecycle and reactivity =====
 
-  $: if (showSettings && activeColorTab !== _lastAppliedColorTab) {
-    // When the user switches tabs within the settings modal, load the corresponding colors
-    currentEditingColors = activeColorTab === 'dark' ? { ...darkColors } : { ...lightColors };
-    _lastAppliedColorTab = activeColorTab;
-  }
+  pages.subscribe(() => {
+    if (!$pages[currentTitle]) {
+      loadPage('Home');
+    }
+  });
+
+  onMount(() => {
+    // Initialize page loading
+    loadPage(currentTitle);
+    
+    if (browser) {
+      // Subscribe to theme store
+      const unsubscribe = theme.subscribe(state => {
+        isDarkMode = state.isDarkMode;
+        currentEditingColors = isDarkMode ? { ...state.darkColors } : { ...state.lightColors };
+        applyColors(currentEditingColors);
+      });
+
+      // Load theme settings
+      theme.loadFromStorage();
+
+      // Load expanded nodes
+      const saved = localStorage.getItem('expandedNodes');
+      if (saved) {
+        try {
+          expandedNodesStore.set(new Set(JSON.parse(saved)));
+        } catch (e) {
+          expandedNodesStore.set(new Set(['Home']));
+        }
+      } else {
+        expandedNodesStore.set(new Set(['Home']));
+      }
+
+      // Load sidebar width
+      const savedWidth = localStorage.getItem('sidebarWidth');
+      if (savedWidth) sidebarWidth = parseInt(savedWidth);
+      if (container) container.style.setProperty('--sidebar-width', sidebarWidth + 'px');
+
+      // Hide context menu on click outside
+      const handleGlobalClick = () => {
+        showContextMenu = false;
+      };
+      document.addEventListener('click', handleGlobalClick);
+
+      return () => {
+        unsubscribe();
+        document.removeEventListener('click', handleGlobalClick);
+      };
+    }
+  });
+
+  // Persist expanded nodes
+  $: if (browser) localStorage.setItem('expandedNodes', JSON.stringify(Array.from($expandedNodesStore)));
+
+  // Calculate orphan pages
+  $: sourceLinkedPages = getSourceLinkedPages($pages);
+  $: orphans = Object.keys($pages).filter(p => !sourceLinkedPages.has(p) && p !== 'Home');
+
+  // Update sidebar width CSS variable
+  $: if (container) container.style.setProperty('--sidebar-width', sidebarWidth + 'px');
 </script>
 
 <style>
@@ -1360,7 +1111,7 @@
     {#if browser}
       <div class="tree-node">
         <div class="tree-item">
-          <TreeNode node={pageTree} {expandedNodes} {toggleNode} {loadPage} {currentTitle} {populateNodeChildren} />
+          <TreeNode node={pageTree} {expandedNodes} {toggleNode} {loadPage} {currentTitle} populateNodeChildren={populateNodeChildrenWrapper} />
         </div>
       </div>
       {#if orphans.length > 0}
@@ -1382,8 +1133,8 @@
       <h2>{currentTitle}</h2>
 
       <div class="controls">
-        <button on:click={goBack} disabled={historyIndex <= 0}>← Back</button>
-        <button on:click={goForward} disabled={historyIndex >= pageHistory.length - 1}>Forward →</button>
+        <button on:click={goBack} disabled={!canNavigateBack()}>← Back</button>
+        <button on:click={goForward} disabled={!canNavigateForward()}>Forward →</button>
         <button on:click={handleExport}>Export</button>
         <button on:click={() => importInput.click()}>Import</button>
         <button on:click={() => showBackups = !showBackups}>
@@ -1392,30 +1143,22 @@
         <button on:click={startSanitize}>Sanitize</button>
         <div class="dark-mode-toggle">
           <span style="font-size: 12px; color: var(--text-secondary);">{isDarkMode ? 'Dark' : 'Light'}</span>
-          <div 
-            class="toggle-switch"
-            class:active={isDarkMode}
-            on:click={() => isDarkMode = !isDarkMode}
-            on:keydown={(e) => e.key === 'Enter' && (isDarkMode = !isDarkMode)}
-            role="checkbox"
-            tabindex="0"
-            aria-label="Toggle dark mode"
-            aria-checked={isDarkMode}
-          ></div>
-          <button 
-            on:click={() => {
-              showSettings = !showSettings;
-              if (showSettings) {
-                activeColorTab = isDarkMode ? 'dark' : 'light';
-                currentEditingColors = { ...(isDarkMode ? darkColors : lightColors) };
-              }
-            }}
-            title="Color Settings"
-            style="padding: 6px 10px; margin-left: 8px;"
-          >
-            ⚙️
-          </button>
-        </div>
+        <button on:click={() => {
+          isDarkMode = !isDarkMode;
+          theme.toggleDarkMode();
+        }}
+          title="Toggle dark mode"
+          style="padding: 6px 10px;">
+          {isDarkMode ? '🌙' : '☀️'}
+        </button>
+        <button 
+          on:click={() => showSettings = !showSettings}
+          title="Color Settings"
+          style="padding: 6px 10px;"
+        >
+          ⚙️
+        </button>
+      </div>
       </div>
 
       <input
@@ -1462,188 +1205,48 @@
 
 {#if browser}
   {#if showContextMenu}
-    <div 
-      class="context-menu"
-      style="position: fixed; left: {menuPosition.x}px; top: {menuPosition.y}px; z-index: 1001;"
-      on:click|stopPropagation={() => {}}
-    >
-      <button on:click={makeWikiLink}>{menuText}</button>
-    </div>
+    <ContextMenu 
+      {menuPosition} 
+      {menuText}
+      onMakeLink={makeWikiLink}
+      onHide={hideContextMenu}
+    />
   {/if}
 
   {#if isSanitizing && sanitizeConflicts.length > 0}
-    <div class="modal-overlay">
-      <div class="modal">
-        <h3>Resolve Wiki Link Conflicts</h3>
-        
-        {#if currentConflictIndex < sanitizeConflicts.length}
-          {@const conflict = sanitizeConflicts[currentConflictIndex]}
-          
-          <div class="conflict-item">
-            <strong>Page "[{conflict.pageName}]" has multiple sources:</strong>
-            <p>This page name is defined as a source link in {conflict.sources.length} places. Please choose which one to keep as the primary source:</p>
-          </div>
-
-          <div>
-            {#each conflict.sources as source}
-              <div class="source-option">
-                <input
-                  type="radio"
-                  id="source-{source}"
-                  name="conflict-source-{currentConflictIndex}"
-                  value={source}
-                  checked={conflictResolutions[conflict.pageName] === source}
-                  on:change={() => conflictResolutions[conflict.pageName] = source}
-                />
-                <label for="source-{source}" style="margin: 0; flex: 1; cursor: pointer;">
-                  <button
-                    class="source-link-button"
-                    on:click={() => goToSource(source)}
-                  >
-                    {source}
-                  </button>
-                </label>
-              </div>
-            {/each}
-          </div>
-
-          <div class="modal-buttons">
-            <button on:click={cancelSanitize}>Cancel</button>
-            <button 
-              on:click={() => resolveConflict(conflictResolutions[conflict.pageName])}
-              disabled={!conflictResolutions[conflict.pageName]}
-            >
-              {currentConflictIndex < sanitizeConflicts.length - 1 ? 'Next' : 'Finish'}
-            </button>
-          </div>
-        {/if}
-      </div>
-    </div>
+    <ConflictModal
+      conflicts={sanitizeConflicts}
+      {currentConflictIndex}
+      {conflictResolutions}
+      onResolve={resolveConflict}
+      onCancel={cancelSanitize}
+      onGoToSource={goToSource}
+    />
   {/if}
 
   {#if showDeleteConfirm && pageToDelete}
-    <div class="modal-overlay" on:click={cancelDelete}>
-      <div class="modal" on:click|stopPropagation>
-        <h3>Delete Page?</h3>
-        <p>Are you sure you want to delete the page "<strong>{pageToDelete}</strong>"? This action cannot be undone.</p>
-        <div class="modal-buttons">
-          <button on:click={cancelDelete}>Cancel</button>
-          <button on:click={deletePage} style="background-color: #d32f2f;">Delete</button>
-        </div>
-      </div>
-    </div>
+    <DeleteModal
+      {pageToDelete}
+      onConfirm={deletePage}
+      onCancel={cancelDelete}
+    />
   {/if}
 
-  {#if showSettings}
-    <div class="modal-overlay" on:click={() => showSettings = false}>
-      <div class="modal settings-modal" on:click|stopPropagation>
-        <h3>Color Settings</h3>
-        
-        <div class="settings-tabs">
-          <button 
-            class="settings-tab"
-            class:active={activeColorTab === 'dark'}
-            on:click={() => {
-              activeColorTab = 'dark';
-              currentEditingColors = { ...darkColors };
-            }}
-          >
-            Dark Mode
-          </button>
-          <button 
-            class="settings-tab"
-            class:active={activeColorTab === 'light'}
-            on:click={() => {
-              activeColorTab = 'light';
-              currentEditingColors = { ...lightColors };
-            }}
-          >
-            Light Mode
-          </button>
-        </div>
-
-        <div class="color-picker-grid">
-          <!-- Hierarchy Colors Section -->
-          <div style="grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Hierarchy View</div>
-          
-          {#each ['treeFolder', 'treePage', 'treeToggle', 'treeLink'] as key}
-            <div class="color-picker-item">
-              <label for="color-{key}">
-                {key.replace(/([A-Z])/g, ' $1').trim()}
-              </label>
-              <div class="color-input-wrapper">
-                <input 
-                  type="color" 
-                  id="color-{key}"
-                  bind:value={currentEditingColors[key as keyof ColorScheme]}
-                  on:input={() => {
-                    if (activeColorTab === 'dark') {
-                      darkColors = { ...currentEditingColors };
-                    } else {
-                      lightColors = { ...currentEditingColors };
-                    }
-                    applyColors(currentEditingColors);
-                  }}
-                />
-                <span class="color-value">{currentEditingColors[key as keyof ColorScheme]}</span>
-              </div>
-              
-              {#if key === 'treeFolder'}
-                <div class="sample" style="margin-top:8px; padding:6px 8px; border-radius:6px; background:{currentEditingColors.treeFolder}; color:{currentEditingColors.textPrimary}; border:1px solid {currentEditingColors.borderColor}; font-weight: 600;">Folder</div>
-              {:else if key === 'treePage'}
-                <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{currentEditingColors.treePage}; font-weight:600;">📄 Page Name</div>
-              {:else if key === 'treeToggle'}
-                <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{currentEditingColors.treeToggle}; font-weight:700; font-size: 14px;">▶ ▼</div>
-              {:else if key === 'treeLink'}
-                <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{currentEditingColors.treeLink}; text-decoration: underline; font-weight: 500;">clickable link</div>
-              {/if}
-            </div>
-          {/each}
-          
-          <!-- Preview Colors Section -->
-          <div style="grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 12px; margin-bottom: 8px;">Preview / Links</div>
-          
-          {#each ['sourceLink', 'proxyLink', 'textPrimary'] as key}
-            <div class="color-picker-item">
-              <label for="color-{key}">
-                {key.replace(/([A-Z])/g, ' $1').trim()}
-              </label>
-              <div class="color-input-wrapper">
-                <input 
-                  type="color" 
-                  id="color-{key}"
-                  bind:value={currentEditingColors[key as keyof ColorScheme]}
-                  on:input={() => {
-                    if (activeColorTab === 'dark') {
-                      darkColors = { ...currentEditingColors };
-                    } else {
-                      lightColors = { ...currentEditingColors };
-                    }
-                    applyColors(currentEditingColors);
-                  }}
-                />
-                <span class="color-value">{currentEditingColors[key as keyof ColorScheme]}</span>
-              </div>
-              
-              {#if key === 'sourceLink'}
-                <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{currentEditingColors.sourceLink}; background: rgba(99,102,241,0.06); border-left:3px solid {currentEditingColors.accent}; font-weight: 600;">[Source]</div>
-              {:else if key === 'proxyLink'}
-                <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{currentEditingColors.proxyLink}; text-decoration:underline dotted;">proxy link</div>
-              {:else if key === 'textPrimary'}
-                <div class="sample" style="margin-top:8px; padding:4px 8px; border-radius:6px; color:{currentEditingColors.textPrimary};">Body text</div>
-              {/if}
-            </div>
-          {/each}
-        </div>
-
-        <div class="settings-buttons">
-          <button on:click={resetColorsToDefault} class="secondary-btn">Reset to Default</button>
-          <div>
-            <button on:click={() => { showSettings = false; saveColorSettings(); }}>Save & Close</button>
-          </div>
-        </div>
-      </div>
-    </div>
+  {#if showSettings && currentEditingColors}
+    <SettingsModal
+      isDark={isDarkMode}
+      colors={currentEditingColors}
+      onColorChange={(colors) => {
+        currentEditingColors = colors;
+        theme.updateColors(isDarkMode, colors);
+        applyColors(colors);
+      }}
+      onResetDefaults={resetColorsToDefault}
+      onClose={() => {
+        showSettings = false;
+        theme.saveToStorage();
+      }}
+    />
   {/if}
 {/if}
 

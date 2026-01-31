@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // Mock the browser check before importing pages
 vi.mock('$app/environment', () => ({
