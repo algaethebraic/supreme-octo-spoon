@@ -1,66 +1,45 @@
-import type { WikiPage } from './stores/pages';
+/**
+ * Wiki page tree structure and building utilities
+ * Creates hierarchical navigation tree from wiki pages and their links
+ */
 
-export type TreeNode = {
-  name: string;
-  path: string;
-  isPage: boolean;
-  children: Map<string, TreeNode>;
-  hasLinks: boolean;
-};
+import type { WikiPageMap, TreeNode } from '$lib/types';
+import { getPageLinks } from '$lib/analysis/linkAnalysis';
+import { HOME_PAGE_TITLE } from '$lib/constants';
 
-export function getAllWikiLinks(pageName: string, pages: Record<string, WikiPage>): Set<string> {
-  const allLinks = new Set<string>();
-  
-  // Get source links (explicit [text] links on this page)
-  const page = pages[pageName];
-  if (page) {
-    const linkRegex = /\[([^\]]+)\]/g;
-    let match;
-    while ((match = linkRegex.exec(page.content)) !== null) {
-      const trimmedLink = match[1].trim();
-      if (trimmedLink) {
-        allLinks.add(trimmedLink);
-      }
-    }
-  }
-  
-  // Get proxy links - page names mentioned outside of brackets
-  if (page?.content) {
-    // Remove all bracketed content to check for mentions outside brackets
-    const contentWithoutBrackets = page.content.replace(/\[[^\]]*\]/g, '');
-    
-    Object.keys(pages).forEach((otherPageName) => {
-      if (otherPageName !== pageName) {
-        // Check if page name appears as a whole word (with word boundaries)
-        const escapedName = otherPageName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`\\b${escapedName}\\b`, 'gi');
-        if (regex.test(contentWithoutBrackets)) {
-          allLinks.add(otherPageName);
-        }
-      }
-    });
-  }
-  
-  return allLinks;
+// Re-export TreeNode type for convenience
+export type { TreeNode } from '$lib/types';
+
+/**
+ * Get all wiki links for a page (both source and proxy)
+ */
+export function getAllWikiLinks(
+  pageName: string,
+  pages: WikiPageMap
+): Set<string> {
+  const linkData = getPageLinks(pageName, pages);
+  return linkData.allLinks;
 }
 
-export function buildPageTree(pages: Record<string, WikiPage>): TreeNode {
-  // Add links from Home (both source and proxy links)
-  const allLinksFromHome = getAllWikiLinks('Home', pages);
-  
+/**
+ * Build the root tree node from Home page
+ */
+export function buildPageTree(pages: WikiPageMap): TreeNode {
+  const allLinksFromHome = getAllWikiLinks(HOME_PAGE_TITLE, pages);
+
   const root: TreeNode = {
-    name: 'Home',
-    path: 'Home',
+    name: HOME_PAGE_TITLE,
+    path: HOME_PAGE_TITLE,
     isPage: false,
     children: new Map(),
     hasLinks: allLinksFromHome.size > 0
   };
-  
+
   allLinksFromHome.forEach((linkTitle) => {
     if (!root.children.has(linkTitle)) {
       const node: TreeNode = {
         name: linkTitle,
-        path: 'Home/' + linkTitle,
+        path: `${HOME_PAGE_TITLE}/${linkTitle}`,
         isPage: !!pages[linkTitle],
         children: new Map(),
         hasLinks: getAllWikiLinks(linkTitle, pages).size > 0
@@ -72,17 +51,27 @@ export function buildPageTree(pages: Record<string, WikiPage>): TreeNode {
   return root;
 }
 
-export function populateNodeChildren(node: TreeNode, pageName: string, pages: Record<string, WikiPage>) {
-  // Lazy-load children when a node is expanded
-  if (node.children.size > 0) return; // Already populated
-  
+/**
+ * Populate a node's children when it's expanded
+ * Uses lazy loading to avoid building entire tree upfront
+ */
+export function populateNodeChildren(
+  node: TreeNode,
+  pageName: string,
+  pages: WikiPageMap
+): void {
+  // Skip if already populated
+  if (node.children.size > 0) {
+    return;
+  }
+
   const allLinks = getAllWikiLinks(pageName, pages);
-  
+
   allLinks.forEach((linkTitle) => {
-    if (linkTitle !== 'Home' && !node.children.has(linkTitle)) {
+    if (linkTitle !== HOME_PAGE_TITLE && !node.children.has(linkTitle)) {
       const childNode: TreeNode = {
         name: linkTitle,
-        path: node.path + '/' + linkTitle,
+        path: `${node.path}/${linkTitle}`,
         isPage: !!pages[linkTitle],
         children: new Map(),
         hasLinks: getAllWikiLinks(linkTitle, pages).size > 0
@@ -92,16 +81,47 @@ export function populateNodeChildren(node: TreeNode, pageName: string, pages: Re
   });
 }
 
+/**
+ * Recursively collect all node paths in the tree
+ */
 export function collectAllNodePaths(node: TreeNode): Set<string> {
   const paths = new Set<string>();
-  
+
   const collect = (n: TreeNode) => {
     paths.add(n.path);
     for (const child of n.children.values()) {
       collect(child);
     }
   };
-  
+
   collect(node);
   return paths;
+}
+
+/**
+ * Find a node in the tree by path
+ */
+export function findNodeByPath(
+  root: TreeNode,
+  targetPath: string
+): TreeNode | null {
+  if (root.path === targetPath) {
+    return root;
+  }
+
+  for (const child of root.children.values()) {
+    const found = findNodeByPath(child, targetPath);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Get the depth of a node in the tree
+ */
+export function getNodeDepth(node: TreeNode): number {
+  return node.path.split('/').length - 1;
 }

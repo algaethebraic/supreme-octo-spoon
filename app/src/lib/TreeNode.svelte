@@ -1,11 +1,5 @@
 <script lang="ts">
-  type TreeNodeType = {
-    name: string;
-    path: string;
-    isPage: boolean;
-    children: Map<string, TreeNodeType>;
-    hasLinks?: boolean;
-  };
+  import type { TreeNode as TreeNodeType } from '$lib/types';
 
   export let node: TreeNodeType;
   export let expandedNodes: Set<string>;
