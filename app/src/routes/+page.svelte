@@ -1,124 +1,134 @@
 <script lang="ts">
-  import { pages, type WikiPage } from '$lib/stores/pages';
-  import { theme, type ColorScheme, DEFAULT_DARK_COLORS } from '$lib/stores/themes';
-  import { getBackups, restoreBackup, exportData, importData } from '$lib/stores/pages';
+  import { pages, type WikiPage, getBackups, restoreBackup, exportData, importData } from '$lib/stores/pages';
+  import { theme, type ColorScheme } from '$lib/stores/themes';
   import { buildPageTree, populateNodeChildren, collectAllNodePaths, type TreeNode as TreeNodeType } from '$lib/tree';
   import { renderContent } from '$lib/wiki';
   import { createPageHistory, canGoBack, canGoForward, goBack as navGoBack, goForward as navGoForward, addToHistory } from '$lib/navigation';
   import { findConflicts, applyConflictResolutions, type ConflictItem } from '$lib/sanitizer';
-  import { get, derived, writable } from 'svelte/store';
+  import { get, derived } from 'svelte/store';
   import { onMount } from 'svelte';
   import { browser } from '$app/environment';
+  
+  // UI state stores
+  import {
+    currentTitle as currentTitleStore,
+    content as contentStore,
+    showBackups,
+    showSettings,
+    sidebarWidth,
+    isResizing,
+    isDarkMode,
+    showContextMenu,
+    menuPosition,
+    selectedWord,
+    menuText,
+    isSanitizing,
+    sanitizeConflicts,
+    currentConflictIndex,
+    conflictResolutions,
+    showDeleteConfirm,
+    pageToDelete,
+    currentEditingColors,
+    expandedNodesStore,
+    pageHistory,
+    canGoBack as canGoBackStore,
+    canGoForward as canGoForwardStore
+  } from '$lib/stores/uiState';
+
+  // Operations
+  import {
+    loadPage as loadPageOp,
+    savePage as savePageOp,
+    deletePage as deletePageOp,
+    getOrphanPages,
+    getSourceLinkedPages
+  } from '$lib/operations/pageOps';
+  
+  import {
+    applyThemeColors,
+    resetThemeToDefaults,
+    updateThemeColors,
+    saveThemeToStorage,
+    toggleDarkMode
+  } from '$lib/operations/themeOps';
+
+  import {
+    getWordAtCursor,
+    isAlreadyLinked,
+    insertWikiLink
+  } from '$lib/operations/textOps';
+
+  import {
+    createTreeToggleStore,
+    loadExpandedNodesFromStorage,
+    saveExpandedNodesToStorage,
+    loadSidebarWidth,
+    saveSidebarWidth
+  } from '$lib/operations/treeOps';
+
+  // Components
   import TreeNode from '$lib/TreeNode.svelte';
   import ConflictModal from '$lib/components/ConflictModal.svelte';
   import DeleteModal from '$lib/components/DeleteModal.svelte';
   import SettingsModal from '$lib/components/SettingsModal.svelte';
   import ContextMenu from '$lib/components/ContextMenu.svelte';
 
-  // State management
-  let currentTitle = 'Home';
-  let content = '';
+  // State - derived from stores
+  let currentTitle: string;
+  let content: string;
   let backups = getBackups();
-  let showBackups = false;
   let importInput: HTMLInputElement;
+  let textareaElement: HTMLTextAreaElement;
   let container: HTMLDivElement;
-  let sidebarWidth = 220;
-  let isResizing = false;
   
-  const expandedNodesStore = writable(new Set<string>());
-  let pageHistory = createPageHistory();
+  // Subscribe to stores
+  currentTitleStore.subscribe(v => currentTitle = v);
+  contentStore.subscribe(v => content = v);
+  sidebarWidth.subscribe(v => {
+    if (v !== undefined) saveSidebarWidth(v);
+  });
   
-  // Context menu variables
-  let showContextMenu = false;
-  let menuPosition = { x: 0, y: 0 };
-  let selectedWord = '';
-  let menuText = '';
+  // Subscribe to page history to update canGoBack/canGoForward
+  pageHistory.subscribe(history => {
+    canGoBackStore.set(canGoBack(history));
+    canGoForwardStore.set(canGoForward(history));
+  });
   
-  // Sanitize mode variables
-  let isSanitizing = false;
-  let sanitizeConflicts: ConflictItem[] = [];
-  let currentConflictIndex = 0;
-  let conflictResolutions: Record<string, string> = {};
-  
-  // Delete confirmation variables
-  let showDeleteConfirm = false;
-  let pageToDelete: string | null = null;
-  
-  // Settings modal state
-  let showSettings = false;
-  let currentEditingColors: ColorScheme = { ...DEFAULT_DARK_COLORS };
-  
-  // Subscribe to the theme store
-  let isDarkMode: boolean;
-  
-  // Reactive declarations for navigation state
-  $: canGoBackState = canGoBack(pageHistory);
-  $: canGoForwardState = canGoForward(pageHistory);
-  
-  $: expandedNodes = $expandedNodesStore;
-
-  // ===== Color management functions =====
-  
-  function applyColors(colors: ColorScheme) {
-    theme.applyColors(colors);
-  }
-
-  function resetColorsToDefault() {
-    theme.resetToDefaults();
-    theme.subscribe(state => {
-      isDarkMode = state.isDarkMode;
-      currentEditingColors = isDarkMode ? { ...state.darkColors } : { ...state.lightColors };
-      applyColors(currentEditingColors);
-    })();
-  }
-
-  // ===== Tree management functions =====
-
-  function toggleNode(path: string) {
-    expandedNodesStore.update(set => {
-      if (set.has(path)) {
-        set.delete(path);
-      } else {
-        set.add(path);
-      }
-      return set;
-    });
-  }
-
-  // Wrapper for populateNodeChildren that provides the pages context
-  function populateNodeChildrenWrapper(node: TreeNodeType, pageName: string) {
-    populateNodeChildren(node, pageName, $pages);
-  }
-
   const pageTreeStore = derived(pages, $pages => buildPageTree($pages));
-  let pageTree: TreeNodeType;
+  let pageTree: TreeNodeType | undefined;
   $: pageTree = $pageTreeStore;
 
   $: expandedNodesStore.update(set => {
+    if (!pageTree) return set;
     const existing = collectAllNodePaths(pageTree);
     return new Set([...set].filter(p => existing.has(p)));
   });
 
+  $: renderedContent = renderContent(content, $pages);
+  $: expandedNodes = $expandedNodesStore;
+  $: sourceLinkedPages = getSourceLinkedPages($pages);
+  $: orphans = getOrphanPages($pages);
+
+
   // ===== Sidebar and resizing functions =====
 
   function startResize(e: MouseEvent) {
-    isResizing = true;
+    isResizing.set(true);
     document.addEventListener('mousemove', resize);
     document.addEventListener('mouseup', stopResize);
   }
 
   function resize(e: MouseEvent) {
-    if (isResizing) {
+    if (get(isResizing)) {
       const newWidth = e.clientX;
       if (newWidth > 100 && newWidth < window.innerWidth - 200) {
-        sidebarWidth = newWidth;
-        if (browser) localStorage.setItem('sidebarWidth', newWidth.toString());
+        sidebarWidth.set(newWidth);
       }
     }
   }
 
   function stopResize() {
-    isResizing = false;
+    isResizing.set(false);
     document.removeEventListener('mousemove', resize);
     document.removeEventListener('mouseup', stopResize);
   }
@@ -126,70 +136,66 @@
   // ===== Navigation functions =====
 
   function goBack() {
-    savePage(); // Save current page before navigating
-    const title = navGoBack(pageHistory);
+    savePageToStore();
+    const history = get(pageHistory);
+    const title = navGoBack(history);
     if (title) {
-      pageHistory = { ...pageHistory }; // Trigger reactivity by creating new object
-      currentTitle = title;
-      content = $pages[title]?.content || '';
+      pageHistory.set({ ...history });
+      currentTitleStore.set(title);
+      contentStore.set(get(pages)[title]?.content || '');
     }
   }
 
   function goForward() {
-    savePage(); // Save current page before navigating
-    const title = navGoForward(pageHistory);
+    savePageToStore();
+    const history = get(pageHistory);
+    const title = navGoForward(history);
     if (title) {
-      pageHistory = { ...pageHistory }; // Trigger reactivity by creating new object
-      currentTitle = title;
-      content = $pages[title]?.content || '';
+      pageHistory.set({ ...history });
+      currentTitleStore.set(title);
+      contentStore.set(get(pages)[title]?.content || '');
     }
   }
 
-  // ===== Page management functions =====
+  // ===== Page management wrappers =====
 
-  function savePage() {
-    pages.update((p) => {
-      return {
-        ...p,
-        [currentTitle]: {
-          title: currentTitle,
-          content
-        }
-      };
+  function savePageToStore() {
+    savePageOp(currentTitle, content);
+  }
+
+  function loadPageWrapper(title: string) {
+    loadPageOp(
+      title,
+      (t) => currentTitleStore.set(t),
+      (c) => contentStore.set(c),
+      (t) => {
+        const history = get(pageHistory);
+        addToHistory(history, t);
+        pageHistory.set({ ...history });
+      }
+    );
+  }
+
+  function deletePageWrapper(title: string) {
+    deletePageOp(title);
+    if (currentTitle === title) {
+      loadPageWrapper('Home');
+    }
+  }
+
+  // Tree wrappers
+  function toggleNode(path: string) {
+    expandedNodesStore.update(set => {
+      const newSet = new Set(set);
+      if (newSet.has(path)) {
+        newSet.delete(path);
+      } else {
+        newSet.add(path);
+      }
+      return newSet;
     });
+    saveExpandedNodesToStorage(get(expandedNodesStore));
   }
-
-  function loadPage(title: string) {
-    const currentPage = $pages[title];
-    if (!currentPage) {
-      // Create new page
-      pages.update((p) => {
-        return {
-          ...p,
-          [title]: {
-            title,
-            content: ''
-          }
-        };
-      });
-      content = '';
-    } else {
-      content = currentPage.content;
-    }
-    
-    currentTitle = title;
-    addToHistory(pageHistory, title);
-    pageHistory = { ...pageHistory }; // Trigger reactivity to update button states
-    console.log('After loadPage:', title, 'History:', pageHistory.pageHistory, 'Index:', pageHistory.historyIndex);
-  }
-
-  // ===== Content rendering functions =====
-
-  function renderPageContent(text: string) {
-    return renderContent(text, $pages);
-  }
-
-  $: renderedContent = renderPageContent(content);
 
   // ===== Link handling functions =====
 
@@ -197,10 +203,9 @@
     const target = e.target as HTMLElement;
     const link = target.closest('[data-link]');
     if (link) {
-      // Prevent loading page if textarea is focused to avoid interrupting typing
       if (document.activeElement?.tagName === 'TEXTAREA') return;
       e.preventDefault();
-      loadPage(link.getAttribute('data-link')!);
+      loadPageWrapper(link.getAttribute('data-link')!);
     }
   }
 
@@ -212,45 +217,32 @@
 
     e.preventDefault();
 
-    let start = textarea.selectionStart;
-    let end = textarea.selectionEnd;
-
-    if (start === end) {
-      // Select the word under the cursor
-      const text = textarea.value;
-      let wordStart = start;
-      while (wordStart > 0 && /\w/.test(text[wordStart - 1])) wordStart--;
-      let wordEnd = start;
-      while (wordEnd < text.length && /\w/.test(text[wordEnd])) wordEnd++;
-      textarea.setSelectionRange(wordStart, wordEnd);
-      start = wordStart;
-      end = wordEnd;
+    const wordInfo = getWordAtCursor(textarea);
+    if (!wordInfo) {
+      showContextMenu.set(false);
+      return;
     }
 
-    const word = textarea.value.substring(start, end).trim();
+    const { word } = wordInfo;
     const currentPages = get(pages);
     const isExistingPage = Object.keys(currentPages).some(p => p.toLowerCase() === word.toLowerCase());
-    const isAlreadyLinked = content.toLowerCase().includes(`[${word.toLowerCase()}]`);
-    if (word && !isAlreadyLinked) {
-      selectedWord = word;
-      menuText = isExistingPage ? 'Re-wikify orphan' : 'Make wiki page';
-      menuPosition = { x: e.clientX, y: e.clientY };
-      showContextMenu = true;
+    
+    if (word && !isAlreadyLinked(content, word)) {
+      selectedWord.set(word);
+      menuText.set(isExistingPage ? 'Re-wikify orphan' : 'Make wiki page');
+      menuPosition.set({ x: e.clientX, y: e.clientY });
+      showContextMenu.set(true);
     }
   }
 
   function makeWikiLink() {
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
-    if (textarea && selectedWord) {
-      textarea.setRangeText(`[${selectedWord}]`);
-      content = textarea.value;
-      savePage();
+    const word = get(selectedWord);
+    if (textarea && word) {
+      contentStore.set(insertWikiLink(textarea, word));
+      savePageToStore();
     }
-    showContextMenu = false;
-  }
-
-  function hideContextMenu() {
-    showContextMenu = false;
+    showContextMenu.set(false);
   }
 
   // ===== Import/Export functions =====
@@ -275,7 +267,7 @@
         if (importData(content)) {
           alert('Data imported successfully!');
           backups = getBackups();
-          loadPage(currentTitle);
+          loadPageWrapper(currentTitle);
         } else {
           alert('Failed to import data. Invalid JSON file.');
         }
@@ -288,28 +280,12 @@
     if (confirm('Restore to this backup? Current changes will be lost.')) {
       restoreBackup(timestamp);
       backups = getBackups();
-      if ($pages[currentTitle]) {
-        loadPage(currentTitle);
+      if (get(pages)[currentTitle]) {
+        loadPageWrapper(currentTitle);
       } else {
-        loadPage('Home');
+        loadPageWrapper('Home');
       }
     }
-  }
-
-  // ===== Wiki link helper functions =====
-
-  function getSourceLinkedPages(pages: Record<string, WikiPage>): Set<string> {
-    const sourceLinks = new Set<string>();
-    
-    Object.values(pages).forEach((page) => {
-      const linkRegex = /\[([^\]]+)\]/g;
-      let match;
-      while ((match = linkRegex.exec(page.content)) !== null) {
-        sourceLinks.add(match[1].trim());
-      }
-    });
-    
-    return sourceLinks;
   }
 
   // ===== Sanitization functions =====
@@ -322,23 +298,25 @@
       return;
     }
     
-    sanitizeConflicts = conflicts;
-    currentConflictIndex = 0;
-    conflictResolutions = {};
-    isSanitizing = true;
+    sanitizeConflicts.set(conflicts);
+    currentConflictIndex.set(0);
+    conflictResolutions.set({});
+    isSanitizing.set(true);
   }
 
   function goToSource(pageName: string) {
-    loadPage(pageName);
+    loadPageWrapper(pageName);
   }
 
   function resolveConflict(chosenSource: string) {
-    const conflict = sanitizeConflicts[currentConflictIndex];
-    conflictResolutions[conflict.pageName] = chosenSource;
+    const conflicts = get(sanitizeConflicts);
+    const conflict = conflicts[get(currentConflictIndex)];
+    const resolutions = get(conflictResolutions);
+    resolutions[conflict.pageName] = chosenSource;
+    conflictResolutions.set(resolutions);
     
-    // Move to next conflict or finish
-    if (currentConflictIndex < sanitizeConflicts.length - 1) {
-      currentConflictIndex++;
+    if (get(currentConflictIndex) < conflicts.length - 1) {
+      currentConflictIndex.set(get(currentConflictIndex) + 1);
     } else {
       applySanitization();
     }
@@ -346,101 +324,83 @@
 
   function applySanitization() {
     const allPages = get(pages);
-    const updatedPages = applyConflictResolutions(allPages, sanitizeConflicts, conflictResolutions);
+    const conflicts = get(sanitizeConflicts);
+    const resolutions = get(conflictResolutions);
+    const updatedPages = applyConflictResolutions(allPages, conflicts, resolutions);
     
-    // Update all pages at once
     pages.set(updatedPages);
     
-    // Exit sanitize mode
-    isSanitizing = false;
-    sanitizeConflicts = [];
-    currentConflictIndex = 0;
-    conflictResolutions = {};
+    isSanitizing.set(false);
+    sanitizeConflicts.set([]);
+    currentConflictIndex.set(0);
+    conflictResolutions.set({});
     
     alert('Sanitization complete!');
   }
 
   function cancelSanitize() {
-    isSanitizing = false;
-    sanitizeConflicts = [];
-    currentConflictIndex = 0;
-    conflictResolutions = {};
+    isSanitizing.set(false);
+    sanitizeConflicts.set([]);
+    currentConflictIndex.set(0);
+    conflictResolutions.set({});
   }
 
   // ===== Delete functions =====
 
   function confirmDelete(pageName: string) {
-    pageToDelete = pageName;
-    showDeleteConfirm = true;
+    pageToDelete.set(pageName);
+    showDeleteConfirm.set(true);
   }
 
-  function deletePage() {
-    if (!pageToDelete) return;
-    
-    const titleToDelete = pageToDelete;
-    pages.update(p => {
-      const updated = { ...p };
-      delete updated[titleToDelete];
-      return updated;
-    });
-    
-    // If we're viewing the deleted page, go to Home
-    if (currentTitle === titleToDelete) {
-      loadPage('Home');
+  function deletePageConfirm() {
+    const titleToDelete = get(pageToDelete);
+    if (titleToDelete) {
+      deletePageWrapper(titleToDelete);
+      showDeleteConfirm.set(false);
+      pageToDelete.set(null);
     }
-    
-    showDeleteConfirm = false;
-    pageToDelete = null;
   }
 
   function cancelDelete() {
-    showDeleteConfirm = false;
-    pageToDelete = null;
+    showDeleteConfirm.set(false);
+    pageToDelete.set(null);
   }
 
-  // ===== Lifecycle and reactivity =====
+  // ===== Lifecycle and initialization =====
 
   pages.subscribe(() => {
-    if (!$pages[currentTitle]) {
-      loadPage('Home');
+    if (!get(pages)[currentTitle]) {
+      loadPageWrapper('Home');
     }
   });
 
   onMount(() => {
     // Initialize page loading
-    loadPage(currentTitle);
+    loadPageWrapper(currentTitle);
     
     if (browser) {
       // Subscribe to theme store
       const unsubscribe = theme.subscribe(state => {
-        isDarkMode = state.isDarkMode;
-        currentEditingColors = isDarkMode ? { ...state.darkColors } : { ...state.lightColors };
-        applyColors(currentEditingColors);
+        isDarkMode.set(state.isDarkMode);
+        currentEditingColors.set(state.isDarkMode ? { ...state.darkColors } : { ...state.lightColors });
+        applyThemeColors(state.isDarkMode ? { ...state.darkColors } : { ...state.lightColors });
       });
 
       // Load theme settings
       theme.loadFromStorage();
 
       // Load expanded nodes
-      const saved = localStorage.getItem('expandedNodes');
-      if (saved) {
-        try {
-          expandedNodesStore.set(new Set(JSON.parse(saved)));
-        } catch (e) {
-          expandedNodesStore.set(new Set(['Home']));
-        }
-      } else {
-        expandedNodesStore.set(new Set(['Home']));
-      }
+      const savedExpandedNodes = loadExpandedNodesFromStorage();
+      expandedNodesStore.set(savedExpandedNodes);
 
       // Load sidebar width
-      const savedWidth = localStorage.getItem('sidebarWidth');
-      if (savedWidth) sidebarWidth = parseInt(savedWidth);
-      if (container) container.style.setProperty('--sidebar-width', sidebarWidth + 'px');
+      const width = loadSidebarWidth();
+      sidebarWidth.set(width);
+      if (container) container.style.setProperty('--sidebar-width', width + 'px');
 
       // Hide context menu on click outside
       const handleGlobalClick = () => {
-        showContextMenu = false;
+        showContextMenu.set(false);
       };
       document.addEventListener('click', handleGlobalClick);
 
@@ -452,14 +412,18 @@
   });
 
   // Persist expanded nodes
-  $: if (browser) localStorage.setItem('expandedNodes', JSON.stringify(Array.from($expandedNodesStore)));
-
-  // Calculate orphan pages
-  $: sourceLinkedPages = getSourceLinkedPages($pages);
-  $: orphans = Object.keys($pages).filter(p => !sourceLinkedPages.has(p) && p !== 'Home');
+  $: if (browser) {
+    expandedNodesStore.subscribe(nodes => {
+      saveExpandedNodesToStorage(nodes);
+    })();
+  }
 
   // Update sidebar width CSS variable
-  $: if (container) container.style.setProperty('--sidebar-width', sidebarWidth + 'px');
+  $: if (container) {
+    sidebarWidth.subscribe(w => {
+      container?.style.setProperty('--sidebar-width', w + 'px');
+    })();
+  }
 </script>
 
 <style>
@@ -1106,7 +1070,9 @@
     {#if browser}
       <div class="tree-node">
         <div class="tree-item">
-          <TreeNode node={pageTree} {expandedNodes} {toggleNode} {loadPage} {currentTitle} populateNodeChildren={populateNodeChildrenWrapper} />
+          {#if pageTree}
+            <TreeNode node={pageTree as TreeNodeType} {expandedNodes} {toggleNode} loadPage={loadPageWrapper} {currentTitle} populateNodeChildren={(node: TreeNodeType, pageName: string) => populateNodeChildren(node, pageName, get(pages))} />
+          {/if}
         </div>
       </div>
       {#if orphans.length > 0}
@@ -1114,7 +1080,7 @@
         <ul class="orphan-list">
           {#each orphans as orphan}
             <li class="orphan-item">
-              <span on:click={() => loadPage(orphan)}>{orphan}</span>
+              <span on:click={() => loadPageWrapper(orphan)}>{orphan}</span>
               <button class="delete-orphan" on:click={() => confirmDelete(orphan)} title="Delete page">×</button>
             </li>
           {/each}
@@ -1128,26 +1094,26 @@
       <h2>{currentTitle}</h2>
 
       <div class="controls">
-        <button on:click={goBack} disabled={!canGoBackState}>← Back</button>
-        <button on:click={goForward} disabled={!canGoForwardState}>Forward →</button>
+        <button on:click={goBack} disabled={!$canGoBackStore}>← Back</button>
+        <button on:click={goForward} disabled={!$canGoForwardStore}>Forward →</button>
         <button on:click={handleExport}>Export</button>
         <button on:click={() => importInput.click()}>Import</button>
-        <button on:click={() => showBackups = !showBackups}>
-          {showBackups ? 'Hide' : 'Show'} Backups ({backups.length})
+        <button on:click={() => showBackups.update(v => !v)}>
+          {$showBackups ? 'Hide' : 'Show'} Backups ({backups.length})
         </button>
         <button on:click={startSanitize}>Sanitize</button>
         <div class="dark-mode-toggle">
-          <span style="font-size: 12px; color: var(--secondary-text);">{isDarkMode ? 'Dark' : 'Light'}</span>
+          <span style="font-size: 12px; color: var(--secondary-text);">{$isDarkMode ? 'Dark' : 'Light'}</span>
         <button on:click={() => {
-          isDarkMode = !isDarkMode;
+          isDarkMode.update(v => !v);
           theme.toggleDarkMode();
         }}
           title="Toggle dark mode"
           style="padding: 6px 10px;">
-          {isDarkMode ? '🌙' : '☀️'}
+          {$isDarkMode ? '🌙' : '☀️'}
         </button>
         <button 
-          on:click={() => showSettings = !showSettings}
+          on:click={() => showSettings.update(v => !v)}
           title="Color Settings"
           style="padding: 6px 10px;"
         >
@@ -1163,7 +1129,7 @@
         on:change={handleImport}
       />
 
-      {#if showBackups && backups.length > 0}
+      {#if $showBackups && backups.length > 0}
         <div class="backup-list">
           <strong>Recent Backups:</strong>
           {#each backups.slice().reverse() as backup (backup.timestamp)}
@@ -1178,11 +1144,15 @@
       {/if}
 
       <textarea
+        bind:this={textareaElement}
         bind:value={content}
-        on:input={savePage}
+        on:input={() => {
+          contentStore.set(content);
+          savePageToStore();
+        }}
         on:contextmenu={handleContextMenu}
         placeholder="Type here. Use [Page Name] to link."
-        disabled={isSanitizing}
+        disabled={$isSanitizing}
       ></textarea>
 
       <h3>Preview</h3>
@@ -1199,47 +1169,82 @@
 </div>
 
 {#if browser}
-  {#if showContextMenu}
+  {#if $showContextMenu}
     <ContextMenu 
-      {menuPosition} 
-      {menuText}
-      onMakeLink={makeWikiLink}
-      onHide={hideContextMenu}
-    />
-  {/if}
-
-  {#if isSanitizing && sanitizeConflicts.length > 0}
-    <ConflictModal
-      conflicts={sanitizeConflicts}
-      {currentConflictIndex}
-      {conflictResolutions}
-      onResolve={resolveConflict}
-      onCancel={cancelSanitize}
-      onGoToSource={goToSource}
-    />
-  {/if}
-
-  {#if showDeleteConfirm && pageToDelete}
-    <DeleteModal
-      {pageToDelete}
-      onConfirm={deletePage}
-      onCancel={cancelDelete}
-    />
-  {/if}
-
-  {#if showSettings && currentEditingColors}
-    <SettingsModal
-      isDark={isDarkMode}
-      colors={currentEditingColors}
-      onColorChange={(colors) => {
-        currentEditingColors = colors;
-        theme.updateColors(isDarkMode, colors);
-        applyColors(colors);
+      menuPosition={$menuPosition}
+      menuText={$selectedWord}
+      onMakeLink={() => {
+        if (textareaElement && $selectedWord) {
+          const newContent = insertWikiLink(textareaElement, $selectedWord);
+          contentStore.set(newContent);
+          content = newContent;
+          savePageToStore();
+        }
+        showContextMenu.set(false);
       }}
-      onResetDefaults={resetColorsToDefault}
+      onHide={() => {
+        showContextMenu.set(false);
+      }}
+    />
+  {/if}
+
+  {#if $isSanitizing && $sanitizeConflicts.length > 0}
+    <ConflictModal
+      conflicts={$sanitizeConflicts}
+      currentConflictIndex={$currentConflictIndex}
+      conflictResolutions={$conflictResolutions}
+      onResolve={(resolution) => {
+        conflictResolutions.update(r => {
+          r[$currentConflictIndex] = resolution;
+          return r;
+        });
+        if ($currentConflictIndex < $sanitizeConflicts.length - 1) {
+          currentConflictIndex.set($currentConflictIndex + 1);
+        } else {
+          isSanitizing.set(false);
+        }
+      }}
+      onCancel={() => {
+        isSanitizing.set(false);
+        sanitizeConflicts.set([]);
+      }}
+      onGoToSource={(title) => {
+        loadPageWrapper(title);
+      }}
+    />
+  {/if}
+
+  {#if $showDeleteConfirm && $pageToDelete}
+    <DeleteModal
+      pageToDelete={$pageToDelete}
+      onConfirm={() => {
+        deletePageWrapper($pageToDelete);
+        showDeleteConfirm.set(false);
+        pageToDelete.set('');
+      }}
+      onCancel={() => {
+        showDeleteConfirm.set(false);
+        pageToDelete.set('');
+      }}
+    />
+  {/if}
+
+  {#if $showSettings && $currentEditingColors}
+    <SettingsModal
+      isDark={$isDarkMode}
+      colors={$currentEditingColors}
+      onColorChange={(colors) => {
+        currentEditingColors.set(colors);
+        updateThemeColors($isDarkMode, colors);
+        applyThemeColors(colors);
+      }}
+      onResetDefaults={() => {
+        resetThemeToDefaults();
+        currentEditingColors.set($isDarkMode ? get(theme).darkColors : get(theme).lightColors);
+      }}
       onClose={() => {
-        showSettings = false;
-        theme.saveToStorage();
+        showSettings.set(false);
+        saveThemeToStorage();
       }}
     />
   {/if}
